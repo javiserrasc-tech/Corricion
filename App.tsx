@@ -5,7 +5,7 @@ import { calculateDistance } from './utils/geoUtils.ts';
 import RunDashboard from './components/RunDashboard.tsx';
 import MapView from './components/MapView.tsx';
 import { getRunInsight } from './services/geminiService.ts';
-import { Activity, MapPin, Play, Square, Pause, RotateCcw, Sparkles, History, ChevronRight, Zap } from 'lucide-react';
+import { Activity, Play, Square, Pause, RotateCcw, Sparkles, History, ChevronRight, Zap } from 'lucide-react';
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<RunStatus>(RunStatus.IDLE);
@@ -15,9 +15,17 @@ const App: React.FC = () => {
   const [currentSpeed, setCurrentSpeed] = useState(0);
   const [recentRuns, setRecentRuns] = useState<RunSession[]>([]);
   const [lastInsight, setLastInsight] = useState<string | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
+  // EFECTO CRÍTICO: Quitar pantalla de carga
   useEffect(() => {
+    const loader = document.getElementById('loading-screen');
+    if (loader) {
+      setTimeout(() => {
+        loader.style.opacity = '0';
+        setTimeout(() => loader.remove(), 500);
+      }, 500);
+    }
+
     const saved = localStorage.getItem('stride_runs');
     if (saved) {
       try {
@@ -51,7 +59,7 @@ const App: React.FC = () => {
 
   const startTracking = () => {
     if (!navigator.geolocation) {
-      alert("GPS no disponible");
+      alert("GPS no disponible en este dispositivo");
       return;
     }
 
@@ -91,10 +99,10 @@ const App: React.FC = () => {
           });
           setCurrentSpeed(speed ? speed * 3.6 : 0);
         },
-        null,
+        (err) => console.error("GPS Error:", err),
         { enableHighAccuracy: true, maximumAge: 0 }
       );
-    }, () => alert("Permiso de ubicación denegado"));
+    }, () => alert("Por favor, permite el acceso a la ubicación para usar el tracker"));
   };
 
   const handleStop = async () => {
@@ -111,18 +119,16 @@ const App: React.FC = () => {
     };
 
     setStatus(RunStatus.COMPLETED);
-    setIsAnalyzing(true);
     const insight = await getRunInsight(newRun);
     newRun.aiInsight = insight;
     setLastInsight(insight);
-    setIsAnalyzing(false);
     saveRun(newRun);
   };
 
   const currentPace = (elapsedTime / 60000) / (distance || 0.0001);
 
   return (
-    <div className="h-full bg-slate-950 text-slate-100 flex flex-col">
+    <div className="h-full bg-slate-950 text-slate-100 flex flex-col overflow-hidden">
       <header className="p-6 pt-[calc(1.5rem+var(--sat))] flex items-center justify-between bg-slate-900/80 backdrop-blur-xl border-b border-slate-800">
         <div className="flex items-center gap-2">
           <Zap className="w-5 h-5 text-blue-500 fill-current" />
@@ -140,7 +146,7 @@ const App: React.FC = () => {
             <MapView path={path} isActive={status === RunStatus.RUNNING} />
             <RunDashboard elapsedTime={elapsedTime} distance={distance} currentSpeed={currentSpeed} currentPace={currentPace} status={status} />
             {lastInsight && (
-              <div className="p-5 bg-blue-600/10 border border-blue-500/20 rounded-3xl">
+              <div className="p-5 bg-blue-600/10 border border-blue-500/20 rounded-3xl animate-in fade-in slide-in-from-bottom-4">
                 <div className="flex items-center gap-2 mb-2 text-blue-400">
                   <Sparkles className="w-4 h-4" />
                   <span className="text-[10px] font-black uppercase tracking-widest">IA Coach Insight</span>
@@ -156,7 +162,7 @@ const App: React.FC = () => {
             </div>
             <div className="text-center">
               <h2 className="text-4xl font-black italic uppercase leading-none mb-2">RUN<br/>SMART.</h2>
-              <p className="text-[10px] font-black text-slate-500 tracking-[0.4em] uppercase">Start your session</p>
+              <p className="text-[10px] font-black text-slate-500 tracking-[0.4em] uppercase">Inicia tu sesión</p>
             </div>
             
             <div className="w-full space-y-4">
@@ -181,30 +187,30 @@ const App: React.FC = () => {
         )}
       </main>
 
-      <footer className="fixed bottom-0 left-0 right-0 p-8 pb-[calc(2rem+var(--sab))] bg-gradient-to-t from-slate-950 via-slate-950 to-transparent">
-        <div className="max-w-md mx-auto">
+      <footer className="fixed bottom-0 left-0 right-0 p-8 pb-[calc(2rem+var(--sab))] bg-gradient-to-t from-slate-950 via-slate-950 to-transparent pointer-events-none">
+        <div className="max-w-md mx-auto pointer-events-auto">
           {status === RunStatus.IDLE && (
-            <button onClick={startTracking} className="w-full py-6 bg-blue-600 text-white font-black rounded-3xl shadow-2xl shadow-blue-500/40 flex items-center justify-center gap-3">
+            <button onClick={startTracking} className="w-full py-6 bg-blue-600 text-white font-black rounded-3xl shadow-2xl shadow-blue-500/40 flex items-center justify-center gap-3 active:scale-95 transition-transform">
               <Play className="fill-current" /> <span className="text-xl uppercase italic">Empezar</span>
             </button>
           )}
           {status === RunStatus.RUNNING && (
             <div className="flex gap-4">
-              <button onClick={() => { stopTracking(); setStatus(RunStatus.PAUSED); }} className="flex-1 py-6 bg-slate-800 text-white font-black rounded-3xl border border-slate-700">
+              <button onClick={() => { stopTracking(); setStatus(RunStatus.PAUSED); }} className="flex-1 py-6 bg-slate-800 text-white font-black rounded-3xl border border-slate-700 active:scale-95 transition-transform">
                 <Pause className="mx-auto" />
               </button>
-              <button onClick={handleStop} className="flex-1 py-6 bg-red-600 text-white font-black rounded-3xl shadow-2xl shadow-red-500/30">
+              <button onClick={handleStop} className="flex-1 py-6 bg-red-600 text-white font-black rounded-3xl shadow-2xl shadow-red-500/30 active:scale-95 transition-transform">
                 <Square className="mx-auto fill-current" />
               </button>
             </div>
           )}
           {status === RunStatus.PAUSED && (
-            <button onClick={startTracking} className="w-full py-6 bg-emerald-600 text-white font-black rounded-3xl">
+            <button onClick={startTracking} className="w-full py-6 bg-emerald-600 text-white font-black rounded-3xl active:scale-95 transition-transform">
               <Play className="mx-auto fill-current" />
             </button>
           )}
           {status === RunStatus.COMPLETED && (
-            <button onClick={() => setStatus(RunStatus.IDLE)} className="w-full py-6 bg-slate-800 text-white font-black rounded-3xl">
+            <button onClick={() => setStatus(RunStatus.IDLE)} className="w-full py-6 bg-slate-800 text-white font-black rounded-3xl active:scale-95 transition-transform">
               <RotateCcw className="mx-auto" />
             </button>
           )}

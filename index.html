@@ -32,18 +32,13 @@
     #loading-screen {
       position: fixed; inset: 0; background: #0f172a;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      z-index: 9999; transition: opacity 0.4s ease;
+      z-index: 9999; transition: opacity 0.5s ease;
     }
     .error-overlay {
       position: fixed; inset: 0; background: #7f1d1d; color: white;
       padding: 2rem; z-index: 10000; display: none; overflow-y: auto;
     }
   </style>
-
-  <script>
-    // Parche crítico: Si el entorno no inyecta 'process', lo creamos vacío para evitar que la app explote
-    window.process = window.process || { env: { API_KEY: "" } };
-  </script>
 
   <script type="importmap">
 {
@@ -67,21 +62,21 @@
   </div>
 
   <div id="error-display" class="error-overlay">
-    <h1 class="text-xl font-bold mb-2">Error de Ejecución</h1>
+    <h1 class="text-xl font-bold mb-2">Ups! Algo falló</h1>
     <p id="error-message" class="font-mono text-xs opacity-80 whitespace-pre-wrap"></p>
-    <button onclick="location.reload()" class="mt-6 w-full bg-white text-red-900 py-4 rounded-2xl font-black uppercase tracking-tighter">Reintentar</button>
+    <button onclick="location.reload()" class="mt-6 w-full bg-white text-red-900 py-4 rounded-2xl font-black uppercase tracking-tighter shadow-lg">Reiniciar App</button>
   </div>
 
   <div id="root"></div>
 
   <script type="module">
     window.onerror = function(msg, url, line, col, error) {
-      const loader = document.getElementById('loading-screen');
       const display = document.getElementById('error-display');
+      const loader = document.getElementById('loading-screen');
       if (loader) loader.style.display = 'none';
       if (display) {
         display.style.display = 'block';
-        document.getElementById('error-message').textContent = msg + '\n\nEn: ' + url.split('/').pop() + ':' + line;
+        document.getElementById('error-message').textContent = msg + '\n\n' + url;
       }
     };
   </script>

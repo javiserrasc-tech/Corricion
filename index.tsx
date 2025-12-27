@@ -14,14 +14,3 @@ root.render(
     <App />
   </React.StrictMode>
 );
-
-// Quitar pantalla de carga una vez React toma el control
-window.addEventListener('load', () => {
-  setTimeout(() => {
-    const loader = document.getElementById('loading-screen');
-    if (loader) {
-      loader.style.opacity = '0';
-      setTimeout(() => loader.remove(), 400);
-    }
-  }, 1000);
-});
