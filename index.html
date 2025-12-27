@@ -4,87 +4,78 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>Corrición - Tu Tracker de Running</title>
+  <title>Corrición - AI Running</title>
   
-  <!-- PWA Meta Tags -->
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0f172a">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Corrición">
-  <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/552/552402.png">
-
-  <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-
+  
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  
   <style>
-    :root {
-      --sat: env(safe-area-inset-top);
-      --sab: env(safe-area-inset-bottom);
-    }
+    :root { --sat: env(safe-area-inset-top); --sab: env(safe-area-inset-bottom); }
     body {
       font-family: 'Inter', sans-serif;
       background-color: #0f172a;
       color: #f8fafc;
-      position: fixed;
-      width: 100%;
-      height: 100%;
+      margin: 0;
+      padding: 0;
       overflow: hidden;
-      padding-top: var(--sat);
-      padding-bottom: var(--sab);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
     }
-    #root {
-      height: 100%;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
+    #root { flex: 1; height: 100%; overflow: hidden; }
+    #loading-screen {
+      position: fixed; inset: 0; background: #0f172a;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      z-index: 9999; transition: opacity 0.5s ease;
     }
-    .leaflet-container {
-      background: #0f172a !important;
-      border-radius: 1.5rem;
-    }
-    .leaflet-bar a {
-      background-color: #1e293b !important;
-      color: #f8fafc !important;
-      border: 1px solid #334155 !important;
-    }
-    .custom-marker {
-      width: 14px;
-      height: 14px;
-      background: #3b82f6;
-      border: 2px solid white;
-      border-radius: 50%;
-      box-shadow: 0 0 15px rgba(59, 130, 246, 0.8);
-    }
-    .pulse-animation {
-      animation: pulse-blue 2s infinite;
-    }
-    @keyframes pulse-blue {
-      0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
-      70% { box-shadow: 0 0 0 15px rgba(59, 130, 246, 0); }
-      100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
-    }
-    /* Ocultar scrollbar */
-    ::-webkit-scrollbar {
-      display: none;
+    .error-overlay {
+      position: fixed; inset: 0; background: #7f1d1d; color: white;
+      padding: 2rem; z-index: 10000; display: none; overflow-y: auto;
     }
   </style>
-<script type="importmap">
+
+  <script type="importmap">
 {
   "imports": {
+    "react": "https://esm.sh/react@19.0.0",
+    "react-dom": "https://esm.sh/react-dom@19.0.0",
+    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
+    "lucide-react": "https://esm.sh/lucide-react@0.460.0",
+    "leaflet": "https://esm.sh/leaflet@1.9.4",
+    "@google/genai": "https://esm.sh/@google/genai@1.34.0",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "leaflet": "https://esm.sh/leaflet@1.9.4"
+    "react/": "https://esm.sh/react@^19.2.3/"
   }
 }
 </script>
 </head>
 <body>
+  <div id="loading-screen">
+    <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+    <p class="text-blue-400 font-black uppercase tracking-widest text-xs">Cargando Corrición</p>
+  </div>
+
+  <div id="error-display" class="error-overlay">
+    <h1 class="text-xl font-bold mb-2">Error de Carga</h1>
+    <p id="error-message" class="font-mono text-sm"></p>
+    <button onclick="location.reload()" class="mt-4 bg-white text-red-900 px-4 py-2 rounded-lg font-bold">Reintentar</button>
+  </div>
+
   <div id="root"></div>
+
+  <script type="module">
+    window.onerror = function(msg, url, line, col, error) {
+      document.getElementById('loading-screen').style.display = 'none';
+      document.getElementById('error-display').style.display = 'block';
+      document.getElementById('error-message').textContent = msg + '\nEn: ' + url + ':' + line;
+    };
+  </script>
   <script type="module" src="index.tsx"></script>
 </body>
 </html>
