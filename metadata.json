@@ -1,12 +1,8 @@
 {
   "name": "Corrición",
   "short_name": "Corrición",
-  "description": "Tu entrenador personal de running con IA. Track de velocidad, distancia y ruta en tiempo real.",
+  "description": "Tu entrenador personal de running con IA.",
   "requestFramePermissions": [
     "geolocation"
-  ],
-  "theme_color": "#0f172a",
-  "background_color": "#0f172a",
-  "display": "standalone",
-  "start_url": "./"
+  ]
 }

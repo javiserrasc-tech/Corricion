@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GeoPoint, RunSession, RunStatus } from './types.ts';
-import { calculateDistance } from './utils/geoUtils.ts';
-import RunDashboard from './components/RunDashboard.tsx';
+import { Play, Pause, Square, History, Zap, Sparkles, ChevronRight, Activity, Map as MapIcon, RotateCcw } from 'lucide-react';
+import { RunStatus, RunSession, GeoPoint } from './types.ts';
+import { calculateDistance, formatTime, formatPace } from './utils/geoUtils.ts';
 import MapView from './components/MapView.tsx';
+import RunDashboard from './components/RunDashboard.tsx';
 import { getRunInsight } from './services/geminiService.ts';
-import { Activity, Play, Square, Pause, RotateCcw, Sparkles, History, ChevronRight, Zap } from 'lucide-react';
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<RunStatus>(RunStatus.IDLE);
@@ -13,205 +13,228 @@ const App: React.FC = () => {
   const [distance, setDistance] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [currentSpeed, setCurrentSpeed] = useState(0);
-  const [recentRuns, setRecentRuns] = useState<RunSession[]>([]);
+  const [history, setHistory] = useState<RunSession[]>([]);
   const [lastInsight, setLastInsight] = useState<string | null>(null);
 
-  useEffect(() => {
-    const loader = document.getElementById('loading-screen');
-    if (loader) {
-      loader.style.opacity = '0';
-      const timer = setTimeout(() => loader.remove(), 400);
-      return () => clearTimeout(timer);
-    }
-  }, []);
+  const watchId = useRef<number | null>(null);
+  const timerInterval = useRef<number | null>(null);
+  const startTimeRef = useRef<number | null>(null);
+  const accumulatedTimeRef = useRef(0);
 
+  // Cargar historial
   useEffect(() => {
-    const saved = localStorage.getItem('stride_runs');
+    const saved = localStorage.getItem('corricion_history');
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) setRecentRuns(parsed);
-      } catch(e) {
-        console.warn("Error al parsear historial local");
+        setHistory(JSON.parse(saved));
+      } catch (e) {
+        console.error("Error cargando historial");
       }
     }
   }, []);
-
-  const saveRun = useCallback((run: RunSession) => {
-    setRecentRuns(prev => {
-      const updated = [run, ...prev].slice(0, 10);
-      localStorage.setItem('stride_runs', JSON.stringify(updated));
-      return updated;
-    });
-  }, []);
-
-  const watchId = useRef<number | null>(null);
-  const timerId = useRef<number | null>(null);
-  const startTimeRef = useRef<number | null>(null);
 
   const stopTracking = useCallback(() => {
     if (watchId.current !== null) {
       navigator.geolocation.clearWatch(watchId.current);
       watchId.current = null;
     }
-    if (timerId.current !== null) {
-      window.clearInterval(timerId.current);
-      timerId.current = null;
+    if (timerInterval.current !== null) {
+      window.clearInterval(timerInterval.current);
+      timerInterval.current = null;
     }
   }, []);
 
   const startTracking = () => {
     if (!navigator.geolocation) {
-      alert("Tu dispositivo no admite geolocalización");
+      alert("Tu dispositivo no soporta GPS.");
       return;
     }
 
-    // Usar una posición inicial con timeout para asegurar que el usuario vea progreso
-    navigator.geolocation.getCurrentPosition(
+    setStatus(RunStatus.RUNNING);
+    
+    if (status === RunStatus.IDLE || status === RunStatus.COMPLETED) {
+      setPath([]);
+      setDistance(0);
+      setElapsedTime(0);
+      accumulatedTimeRef.current = 0;
+      setLastInsight(null);
+    }
+
+    startTimeRef.current = Date.now();
+
+    // Timer
+    timerInterval.current = window.setInterval(() => {
+      if (startTimeRef.current) {
+        const now = Date.now();
+        const sessionTime = now - startTimeRef.current;
+        setElapsedTime(accumulatedTimeRef.current + sessionTime);
+      }
+    }, 1000);
+
+    // GPS Watch
+    watchId.current = navigator.geolocation.watchPosition(
       (pos) => {
-        setStatus(RunStatus.RUNNING);
-        
-        if (status === RunStatus.IDLE || status === RunStatus.COMPLETED) {
-          startTimeRef.current = Date.now();
-          setPath([]);
-          setDistance(0);
-          setElapsedTime(0);
-          setLastInsight(null);
-        }
+        const { latitude, longitude, speed, accuracy } = pos.coords;
+        if (accuracy > 50) return; // Ignorar posiciones imprecisas
 
-        if (timerId.current) window.clearInterval(timerId.current);
-        timerId.current = window.setInterval(() => {
-          if (startTimeRef.current && status === RunStatus.RUNNING) {
-            setElapsedTime(Date.now() - startTimeRef.current);
+        const newPoint: GeoPoint = {
+          latitude,
+          longitude,
+          timestamp: pos.timestamp,
+          accuracy,
+          speed: speed || 0
+        };
+
+        setPath(prev => {
+          if (prev.length > 0) {
+            const last = prev[prev.length - 1];
+            const d = calculateDistance(last.latitude, last.longitude, latitude, longitude);
+            if (d > 0.003) setDistance(dist => dist + d); // Solo sumar si se movió > 3m
           }
-        }, 1000);
+          return [...prev, newPoint];
+        });
 
-        if (watchId.current) navigator.geolocation.clearWatch(watchId.current);
-        watchId.current = navigator.geolocation.watchPosition(
-          (pos) => {
-            const { latitude, longitude, speed, accuracy } = pos.coords;
-            if (accuracy > 60) return; 
-
-            const newPoint: GeoPoint = { 
-              latitude, longitude, timestamp: pos.timestamp, accuracy, speed: speed || 0 
-            };
-
-            setPath(prevPath => {
-              if (prevPath.length > 0) {
-                const last = prevPath[prevPath.length - 1];
-                const d = calculateDistance(last.latitude, last.longitude, newPoint.latitude, newPoint.longitude);
-                if (d > 0.002) setDistance(prev => prev + d);
-              }
-              return [...prevPath, newPoint];
-            });
-            setCurrentSpeed(speed ? speed * 3.6 : 0);
-          },
-          (err) => console.warn("GPS Watch Error:", err.message),
-          { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
-        );
-      }, 
-      (err) => {
-        let msg = "Error de GPS: ";
-        if (err.code === 1) msg += "Permiso denegado. Activa la ubicación en tu navegador.";
-        else if (err.code === 2) msg += "Posición no disponible. Asegúrate de tener señal.";
-        else if (err.code === 3) msg += "Tiempo de espera agotado. Reintenta.";
-        else msg += err.message;
-        
-        console.error(msg);
-        alert(msg);
+        setCurrentSpeed(speed ? speed * 3.6 : 0); // m/s a km/h
       },
-      { timeout: 10000, enableHighAccuracy: false } // Primera petición menos estricta para asegurar arranque
+      (err) => {
+        console.warn("GPS Error:", err.message);
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
     );
+  };
+
+  const handlePause = () => {
+    stopTracking();
+    if (startTimeRef.current) {
+      accumulatedTimeRef.current += (Date.now() - startTimeRef.current);
+    }
+    setStatus(RunStatus.PAUSED);
   };
 
   const handleStop = async () => {
     stopTracking();
-    const finalStartTime = startTimeRef.current || Date.now();
-    const durationMin = (Date.now() - finalStartTime) / 60000;
+    if (startTimeRef.current && status === RunStatus.RUNNING) {
+      accumulatedTimeRef.current += (Date.now() - startTimeRef.current);
+    }
     
-    const newRun: RunSession = {
+    const finalDuration = accumulatedTimeRef.current;
+    const avgPace = distance > 0 ? (finalDuration / 60000) / distance : 0;
+    
+    const session: RunSession = {
       id: Date.now().toString(),
-      startTime: finalStartTime,
-      endTime: Date.now(), 
-      path: [...path], 
-      distanceKm: distance, 
-      averagePace: distance > 0 ? durationMin / distance : 0,
+      startTime: Date.now() - finalDuration,
+      endTime: Date.now(),
+      path: [...path],
+      distanceKm: distance,
+      averagePace: avgPace,
       status: RunStatus.COMPLETED
     };
 
     setStatus(RunStatus.COMPLETED);
-    
+
+    // Obtener consejo de la IA
     try {
-      const insight = await getRunInsight(newRun);
-      newRun.aiInsight = insight;
+      const insight = await getRunInsight(session);
+      session.aiInsight = insight;
       setLastInsight(insight);
-    } catch (err) {
-      console.warn("IA no disponible");
+    } catch (e) {
+      setLastInsight("¡Gran carrera! Mantén la consistencia.");
     }
-    
-    saveRun(newRun);
+
+    // Guardar en historial
+    setHistory(prev => {
+      const newHistory = [session, ...prev].slice(0, 10);
+      localStorage.setItem('corricion_history', JSON.stringify(newHistory));
+      return newHistory;
+    });
   };
 
-  const currentPace = (elapsedTime / 60000) / (distance || 0.0001);
+  const currentPace = distance > 0 ? (elapsedTime / 60000) / distance : 0;
 
   return (
-    <div className="h-full bg-slate-950 text-slate-100 flex flex-col overflow-hidden">
-      <header className="p-6 pt-[calc(1.5rem+var(--sat))] flex items-center justify-between bg-slate-900/80 backdrop-blur-xl border-b border-slate-800 shrink-0 z-50">
+    <div className="flex flex-col h-full bg-slate-950 text-slate-50 overflow-hidden">
+      {/* Header */}
+      <header className="px-6 pt-[calc(1.5rem+var(--sat))] pb-4 flex items-center justify-between border-b border-slate-900 bg-slate-900/50 backdrop-blur-xl z-50">
         <div className="flex items-center gap-2">
-          <Zap className="w-5 h-5 text-blue-500 fill-current" />
-          <h1 className="text-xl font-black tracking-tighter italic uppercase">CORRI<span className="text-blue-500">CIÓN</span></h1>
+          <div className="bg-blue-600 p-2 rounded-xl shadow-lg shadow-blue-500/20">
+            <Zap className="w-5 h-5 text-white fill-current" />
+          </div>
+          <h1 className="text-xl font-black italic tracking-tighter uppercase">CORRI<span className="text-blue-500">CIÓN</span></h1>
         </div>
-        <div className="flex items-center gap-2 px-3 py-1 bg-slate-800 rounded-full border border-slate-700">
-          <div className={`w-1.5 h-1.5 rounded-full ${status === RunStatus.RUNNING ? 'bg-emerald-500 animate-pulse' : 'bg-slate-600'}`}></div>
-          <span className="text-[9px] font-black uppercase text-slate-400 tracking-tighter">GPS Status</span>
-        </div>
+        {status === RunStatus.RUNNING && (
+          <div className="flex items-center gap-2 px-3 py-1 bg-red-500/10 border border-red-500/20 rounded-full animate-pulse">
+            <div className="w-1.5 h-1.5 rounded-full bg-red-500"></div>
+            <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest">LIVE</span>
+          </div>
+        )}
       </header>
 
-      <main className="flex-1 overflow-y-auto p-4 pb-40">
+      {/* Main Content */}
+      <main className="flex-1 overflow-y-auto p-4 space-y-6 pb-40">
         {status !== RunStatus.IDLE ? (
-          <div className="space-y-6 animate-in fade-in duration-500">
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <MapView path={path} isActive={status === RunStatus.RUNNING} />
-            <RunDashboard elapsedTime={elapsedTime} distance={distance} currentSpeed={currentSpeed} currentPace={currentPace} status={status} />
+            
+            <RunDashboard 
+              elapsedTime={elapsedTime} 
+              distance={distance} 
+              currentSpeed={currentSpeed} 
+              currentPace={currentPace} 
+            />
+
             {lastInsight && (
-              <div className="p-5 bg-blue-600/10 border border-blue-500/20 rounded-3xl animate-in slide-in-from-top-4">
-                <div className="flex items-center gap-2 mb-2 text-blue-400">
-                  <Sparkles className="w-4 h-4" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-blue-300">Coach IA</span>
+              <div className="p-6 bg-gradient-to-br from-blue-600/20 to-indigo-600/10 border border-blue-500/30 rounded-[2rem] shadow-2xl relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-4 opacity-20 group-hover:opacity-40 transition-opacity">
+                  <Sparkles className="w-12 h-12 text-blue-400" />
                 </div>
-                <p className="text-sm italic leading-relaxed text-slate-200">"{lastInsight}"</p>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">Feedback de Coach IA</span>
+                </div>
+                <p className="text-lg leading-relaxed text-blue-50 italic font-medium">"{lastInsight}"</p>
               </div>
             )}
           </div>
         ) : (
-          <div className="flex flex-col items-center py-8 space-y-12 animate-in slide-in-from-bottom-8 duration-700">
-            <div className="p-12 bg-blue-600/10 rounded-full border border-blue-500/10 relative">
-              <Activity className="w-20 h-20 text-blue-500" />
-              <div className="absolute inset-0 border-4 border-blue-500/20 rounded-full animate-ping"></div>
+          <div className="space-y-8 py-4">
+            {/* Hero Section */}
+            <div className="text-center space-y-2 py-6">
+              <div className="inline-flex p-4 bg-blue-600/10 rounded-full mb-4 border border-blue-500/10">
+                <Activity className="w-12 h-12 text-blue-500" />
+              </div>
+              <h2 className="text-4xl font-black tracking-tighter uppercase italic leading-none">Supera tus<br/>Límites.</h2>
+              <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">Trackeado por Inteligencia Artificial</p>
             </div>
-            <div className="text-center">
-              <h2 className="text-4xl font-black italic uppercase leading-none mb-2 tracking-tighter">CORRE<br/>MEJOR.</h2>
-              <p className="text-[10px] font-black text-slate-500 tracking-[0.4em] uppercase">Analizado por Gemini AI</p>
-            </div>
-            
-            <div className="w-full space-y-4">
-              <p className="text-[10px] font-black uppercase text-slate-600 tracking-widest px-2 flex items-center gap-2">
-                <History className="w-3 h-3" /> Historial
-              </p>
-              {recentRuns.length > 0 ? (
+
+            {/* History */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between px-2">
+                <h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-400">
+                  <History className="w-4 h-4" /> Historial Reciente
+                </h3>
+              </div>
+              
+              {history.length > 0 ? (
                 <div className="space-y-3">
-                  {recentRuns.map(run => (
-                    <div key={run.id} className="p-4 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-between active:bg-slate-800 transition-colors">
-                      <div>
-                        <p className="text-lg font-black">{run.distanceKm.toFixed(2)} km</p>
-                        <p className="text-[10px] text-slate-500 uppercase font-bold">{new Date(run.startTime).toLocaleDateString()} - {new Date(run.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                  {history.map(run => (
+                    <div key={run.id} className="p-4 bg-slate-900/50 border border-slate-800 rounded-2xl flex items-center justify-between group active:bg-slate-800 transition-colors">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-blue-500">
+                          <MapIcon className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="font-black text-lg">{run.distanceKm.toFixed(2)} km</div>
+                          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-tighter">
+                            {new Date(run.startTime).toLocaleDateString()} • {formatPace(run.averagePace)}/km
+                          </div>
+                        </div>
                       </div>
-                      <ChevronRight className="text-slate-700" />
+                      <ChevronRight className="w-5 h-5 text-slate-700 group-hover:text-slate-400 transition-colors" />
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="p-10 border-2 border-dashed border-slate-800 rounded-3xl text-center">
-                  <p className="text-xs font-bold text-slate-600 uppercase">¿Listo para tu primera carrera?</p>
+                <div className="p-12 border-2 border-dashed border-slate-900 rounded-[2.5rem] text-center">
+                  <p className="text-slate-600 font-bold text-sm uppercase">¿A qué esperas?<br/>Empieza a correr.</p>
                 </div>
               )}
             </div>
@@ -219,31 +242,64 @@ const App: React.FC = () => {
         )}
       </main>
 
-      <footer className="fixed bottom-0 left-0 right-0 p-8 pb-[calc(2rem+var(--sab))] bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent pointer-events-none z-50">
-        <div className="max-w-md mx-auto pointer-events-auto">
+      {/* Footer / Controls */}
+      <footer className="fixed bottom-0 left-0 right-0 p-8 pb-[calc(2rem+var(--sab))] bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent z-[1000]">
+        <div className="max-w-md mx-auto">
           {status === RunStatus.IDLE && (
-            <button onClick={startTracking} className="w-full py-6 bg-blue-600 text-white font-black rounded-3xl shadow-2xl shadow-blue-500/40 flex items-center justify-center gap-3 active:scale-95 transition-transform touch-none">
-              <Play className="fill-current w-5 h-5" /> <span className="text-xl uppercase italic">Empezar Carrera</span>
+            <button 
+              onClick={startTracking}
+              className="w-full py-6 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-[2rem] shadow-2xl shadow-blue-500/40 flex items-center justify-center gap-3 active:scale-95 transition-all"
+            >
+              <Play className="w-6 h-6 fill-current" />
+              <span className="text-xl uppercase italic tracking-tighter">Empezar Carrera</span>
             </button>
           )}
+
           {status === RunStatus.RUNNING && (
             <div className="flex gap-4">
-              <button onClick={() => { stopTracking(); setStatus(RunStatus.PAUSED); }} className="flex-1 py-6 bg-slate-800 text-white font-black rounded-3xl border border-slate-700 active:scale-95 transition-transform flex justify-center">
+              <button 
+                onClick={handlePause}
+                className="flex-1 py-6 bg-slate-800 text-white font-black rounded-[2rem] border border-slate-700 active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
                 <Pause className="w-6 h-6" />
+                <span className="uppercase italic tracking-tighter">Pausa</span>
               </button>
-              <button onClick={handleStop} className="flex-1 py-6 bg-red-600 text-white font-black rounded-3xl shadow-2xl shadow-red-500/30 active:scale-95 transition-transform flex justify-center">
+              <button 
+                onClick={handleStop}
+                className="flex-1 py-6 bg-red-600 text-white font-black rounded-[2rem] shadow-xl shadow-red-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
                 <Square className="w-6 h-6 fill-current" />
+                <span className="uppercase italic tracking-tighter">Parar</span>
               </button>
             </div>
           )}
+
           {status === RunStatus.PAUSED && (
-            <button onClick={startTracking} className="w-full py-6 bg-emerald-600 text-white font-black rounded-3xl active:scale-95 transition-transform flex justify-center">
-              <Play className="fill-current w-6 h-6" />
-            </button>
+            <div className="flex gap-4">
+              <button 
+                onClick={startTracking}
+                className="flex-1 py-6 bg-emerald-600 text-white font-black rounded-[2rem] active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                <Play className="w-6 h-6 fill-current" />
+                <span className="uppercase italic tracking-tighter">Seguir</span>
+              </button>
+              <button 
+                onClick={handleStop}
+                className="flex-1 py-6 bg-red-600 text-white font-black rounded-[2rem] active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                <Square className="w-6 h-6 fill-current" />
+                <span className="uppercase italic tracking-tighter">Fin</span>
+              </button>
+            </div>
           )}
+
           {status === RunStatus.COMPLETED && (
-            <button onClick={() => setStatus(RunStatus.IDLE)} className="w-full py-6 bg-slate-800 text-white font-black rounded-3xl active:scale-95 transition-transform flex justify-center items-center gap-2">
-              <RotateCcw className="w-5 h-5" /> <span className="uppercase font-black text-sm">Nueva Sesión</span>
+            <button 
+              onClick={() => setStatus(RunStatus.IDLE)}
+              className="w-full py-6 bg-slate-800 text-white font-black rounded-[2rem] active:scale-95 transition-all flex items-center justify-center gap-2"
+            >
+              <RotateCcw className="w-5 h-5" />
+              <span className="uppercase italic tracking-tighter">Nueva Carrera</span>
             </button>
           )}
         </div>
