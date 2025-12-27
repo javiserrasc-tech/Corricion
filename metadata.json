@@ -1,0 +1,7 @@
+{
+  "name": "Corrición",
+  "description": "Un rastreador de carrera de alto rendimiento que utiliza geolocalización en tiempo real para monitorizar ritmo, distancia y ruta, con consejos de IA mediante Gemini.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
