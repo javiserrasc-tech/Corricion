@@ -3,14 +3,9 @@ import { GoogleGenAI } from "@google/genai";
 import { RunSession } from "../types.ts";
 
 export const getRunInsight = async (run: RunSession): Promise<string> => {
-  // Las normas del SDK exigen usar process.env.API_KEY directamente
+  // Fix: Initializing GoogleGenAI client using the required pattern with process.env.API_KEY directly
   try {
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) {
-      return "¡Excelente carrera! Mantén este ritmo para mejorar tu resistencia.";
-    }
-
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     const durationMinutes = run.endTime ? (run.endTime - run.startTime) / 60000 : 0;
     const avgSpeedKmh = run.distanceKm / (durationMinutes / 60 || 1);
@@ -33,6 +28,7 @@ export const getRunInsight = async (run: RunSession): Promise<string> => {
       }
     });
     
+    // Fix: Using the .text property directly as per Gemini API best practices
     return response.text || "¡Buen trabajo hoy!";
   } catch (error) {
     console.error("Gemini Error:", error);

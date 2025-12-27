@@ -1,30 +1,27 @@
 
 import React from 'react';
-import ReactDOM from 'react-dom/client';
+import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 
-const init = () => {
-  try {
-    const rootElement = document.getElementById('root');
-    if (!rootElement) return;
+console.log("Iniciando montaje de React...");
 
-    const root = ReactDOM.createRoot(rootElement);
+const container = document.getElementById('root');
+if (container) {
+  try {
+    const root = createRoot(container);
     root.render(
       <React.StrictMode>
         <App />
       </React.StrictMode>
     );
-    
-    console.log("React montado correctamente.");
-  } catch (error) {
-    console.error("Error al arrancar React:", error);
-    const errDisplay = document.getElementById('error-message');
-    if (errDisplay) errDisplay.textContent = String(error);
-    const overlay = document.getElementById('error-display');
-    if (overlay) overlay.style.display = 'block';
-    const loader = document.getElementById('loading-screen');
-    if (loader) loader.style.display = 'none';
+    console.log("Montaje exitoso.");
+  } catch (err) {
+    console.error("Error durante el renderizado:", err);
+    // Fix: Accessing custom window property showFatalError by casting window to any to resolve TypeScript errors
+    if ((window as any).showFatalError) {
+      (window as any).showFatalError(err instanceof Error ? err.message : String(err));
+    }
   }
-};
-
-init();
+} else {
+  console.error("No se encontró el elemento #root");
+}

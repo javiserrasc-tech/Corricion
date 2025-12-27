@@ -25,18 +25,33 @@
       padding: 0;
       overflow: hidden;
       height: 100vh;
-      display: flex;
-      flex-direction: column;
     }
-    #root { flex: 1; height: 100%; overflow: hidden; }
+    #root { height: 100%; width: 100%; }
     #loading-screen {
       position: fixed; inset: 0; background: #0f172a;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      z-index: 9999; transition: opacity 0.5s ease;
+      z-index: 9999;
+      transition: opacity 0.4s ease-out;
     }
     .error-overlay {
-      position: fixed; inset: 0; background: #7f1d1d; color: white;
+      position: fixed; inset: 0; background: #450a0a; color: white;
       padding: 2rem; z-index: 10000; display: none; overflow-y: auto;
+    }
+    /* Estilos para el mapa Leaflet en modo oscuro */
+    .leaflet-container { background: #0f172a !important; }
+    .custom-marker {
+      background: #3b82f6;
+      border: 2px solid white;
+      border-radius: 50%;
+      box-shadow: 0 0 15px #3b82f6;
+    }
+    .pulse-animation {
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+      70% { transform: scale(1.2); box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+      100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
     }
   </style>
 
@@ -58,40 +73,36 @@
 <body>
   <div id="loading-screen">
     <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-    <p class="text-blue-400 font-black uppercase tracking-widest text-[10px]">Iniciando Corrición</p>
+    <p id="loading-text" class="text-blue-400 font-black uppercase tracking-widest text-[10px]">Iniciando App...</p>
   </div>
 
   <div id="error-display" class="error-overlay">
-    <h1 class="text-xl font-bold mb-2">Error Crítico</h1>
+    <h1 class="text-xl font-bold mb-2">Error de Sistema</h1>
     <p id="error-message" class="font-mono text-xs opacity-80 whitespace-pre-wrap"></p>
-    <button onclick="location.reload()" class="mt-6 w-full bg-white text-red-900 py-4 rounded-2xl font-black uppercase tracking-tighter shadow-lg">Reintentar</button>
+    <button onclick="location.reload()" class="mt-6 w-full bg-red-600 text-white py-4 rounded-2xl font-black uppercase tracking-tighter">Reiniciar App</button>
   </div>
 
   <div id="root"></div>
 
   <script type="module">
-    // 1. Captura de errores globales
-    const showError = (msg) => {
-      const display = document.getElementById('error-display');
+    window.showFatalError = (msg) => {
       const loader = document.getElementById('loading-screen');
       if (loader) loader.style.display = 'none';
+      const display = document.getElementById('error-display');
       if (display) {
         display.style.display = 'block';
         document.getElementById('error-message').textContent = msg;
       }
     };
 
-    window.onerror = (msg, url, line) => showError(`JS Error: ${msg}\nEn: ${url}:${line}`);
-    window.onunhandledrejection = (event) => showError(`Promise Error: ${event.reason}`);
+    window.onerror = (msg, url, line, col, error) => {
+      window.showFatalError(`[Error]: ${msg}\nEn: ${url}:${line}:${col}`);
+      return false;
+    };
 
-    // 2. Temporizador de seguridad (Si en 8s no ha cargado, algo va mal con los archivos)
-    setTimeout(() => {
-      const loader = document.getElementById('loading-screen');
-      if (loader && loader.parentElement) {
-        console.warn("La carga está tardando demasiado. Verificando estado...");
-        // No lo quitamos por fuerza aquí para no romper React, pero avisamos en consola
-      }
-    }, 8000);
+    window.onunhandledrejection = (event) => {
+      window.showFatalError(`[Rejection]: ${event.reason}`);
+    };
   </script>
   <script type="module" src="index.tsx"></script>
 </body>
