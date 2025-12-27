@@ -1,5 +1,5 @@
 
-import { GeoPoint } from "../types";
+import { GeoPoint } from "../types.ts";
 
 export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
   const R = 6371; // Earth's radius in km
@@ -26,7 +26,7 @@ export const formatTime = (ms: number): string => {
 };
 
 export const formatPace = (paceMinutes: number): string => {
-  if (!isFinite(paceMinutes) || paceMinutes === 0) return "0:00";
+  if (!isFinite(paceMinutes) || paceMinutes === 0 || isNaN(paceMinutes)) return "0:00";
   const mins = Math.floor(paceMinutes);
   const secs = Math.round((paceMinutes - mins) * 60);
   return `${mins}:${secs.toString().padStart(2, '0')}`;

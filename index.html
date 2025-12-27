@@ -32,13 +32,18 @@
     #loading-screen {
       position: fixed; inset: 0; background: #0f172a;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      z-index: 9999; transition: opacity 0.5s ease;
+      z-index: 9999; transition: opacity 0.4s ease;
     }
     .error-overlay {
       position: fixed; inset: 0; background: #7f1d1d; color: white;
       padding: 2rem; z-index: 10000; display: none; overflow-y: auto;
     }
   </style>
+
+  <script>
+    // Parche crítico: Si el entorno no inyecta 'process', lo creamos vacío para evitar que la app explote
+    window.process = window.process || { env: { API_KEY: "" } };
+  </script>
 
   <script type="importmap">
 {
@@ -58,22 +63,26 @@
 <body>
   <div id="loading-screen">
     <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-    <p class="text-blue-400 font-black uppercase tracking-widest text-xs">Cargando Corrición</p>
+    <p class="text-blue-400 font-black uppercase tracking-widest text-[10px]">Iniciando Corrición</p>
   </div>
 
   <div id="error-display" class="error-overlay">
-    <h1 class="text-xl font-bold mb-2">Error de Carga</h1>
-    <p id="error-message" class="font-mono text-sm"></p>
-    <button onclick="location.reload()" class="mt-4 bg-white text-red-900 px-4 py-2 rounded-lg font-bold">Reintentar</button>
+    <h1 class="text-xl font-bold mb-2">Error de Ejecución</h1>
+    <p id="error-message" class="font-mono text-xs opacity-80 whitespace-pre-wrap"></p>
+    <button onclick="location.reload()" class="mt-6 w-full bg-white text-red-900 py-4 rounded-2xl font-black uppercase tracking-tighter">Reintentar</button>
   </div>
 
   <div id="root"></div>
 
   <script type="module">
     window.onerror = function(msg, url, line, col, error) {
-      document.getElementById('loading-screen').style.display = 'none';
-      document.getElementById('error-display').style.display = 'block';
-      document.getElementById('error-message').textContent = msg + '\nEn: ' + url + ':' + line;
+      const loader = document.getElementById('loading-screen');
+      const display = document.getElementById('error-display');
+      if (loader) loader.style.display = 'none';
+      if (display) {
+        display.style.display = 'block';
+        document.getElementById('error-message').textContent = msg + '\n\nEn: ' + url.split('/').pop() + ':' + line;
+      }
     };
   </script>
   <script type="module" src="index.tsx"></script>
