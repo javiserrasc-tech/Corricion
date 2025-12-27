@@ -1,7 +1,12 @@
 {
   "name": "Corrición",
-  "description": "Un rastreador de carrera de alto rendimiento que utiliza geolocalización en tiempo real para monitorizar ritmo, distancia y ruta, con consejos de IA mediante Gemini.",
+  "short_name": "Corrición",
+  "description": "Tu entrenador personal de running con IA. Track de velocidad, distancia y ruta en tiempo real.",
   "requestFramePermissions": [
     "geolocation"
-  ]
+  ],
+  "theme_color": "#0f172a",
+  "background_color": "#0f172a",
+  "display": "standalone",
+  "start_url": "./"
 }

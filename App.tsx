@@ -30,6 +30,11 @@ const App: React.FC = () => {
     localStorage.setItem('stride_runs', JSON.stringify(updated));
   };
 
+  const watchId = useRef<number | null>(null);
+  const timerId = useRef<number | null>(null);
+  const startTimeRef = useRef<number | null>(null);
+  const lastUpdateRef = useRef<number>(0);
+
   const stopTracking = useCallback(() => {
     if (watchId.current !== null) {
       navigator.geolocation.clearWatch(watchId.current);
@@ -41,50 +46,70 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const watchId = useRef<number | null>(null);
-  const timerId = useRef<number | null>(null);
-  const startTimeRef = useRef<number | null>(null);
-
   const startTracking = () => {
     if (!navigator.geolocation) {
       alert("GPS no soportado en este dispositivo");
       return;
     }
 
-    setStatus(RunStatus.RUNNING);
-    if (status === RunStatus.IDLE || status === RunStatus.COMPLETED) {
-      startTimeRef.current = Date.now();
-      setPath([]);
-      setDistance(0);
-      setElapsedTime(0);
-      setLastInsight(null);
-    }
-
-    timerId.current = window.setInterval(() => {
-      if (startTimeRef.current) {
-        setElapsedTime(Date.now() - startTimeRef.current);
+    // Solicitar permiso explícito primero para despertar el sensor
+    navigator.geolocation.getCurrentPosition(() => {
+      setStatus(RunStatus.RUNNING);
+      
+      if (status === RunStatus.IDLE || status === RunStatus.COMPLETED) {
+        startTimeRef.current = Date.now();
+        setPath([]);
+        setDistance(0);
+        setElapsedTime(0);
+        setLastInsight(null);
       }
-    }, 1000);
 
-    watchId.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        const { latitude, longitude, speed, accuracy } = pos.coords;
-        const newPoint: GeoPoint = { latitude, longitude, timestamp: pos.timestamp, accuracy, speed: speed || 0 };
+      timerId.current = window.setInterval(() => {
+        if (startTimeRef.current && status === RunStatus.RUNNING) {
+          setElapsedTime(Date.now() - startTimeRef.current);
+        }
+      }, 1000);
 
-        setPath(prevPath => {
-          if (prevPath.length > 0) {
-            const lastPoint = prevPath[prevPath.length - 1];
-            const d = calculateDistance(lastPoint.latitude, lastPoint.longitude, newPoint.latitude, newPoint.longitude);
-            // Solo añadir si la precisión es aceptable (menos de 30 metros)
-            if (accuracy < 30) setDistance(prev => prev + d);
-          }
-          return [...prevPath, newPoint];
-        });
-        setCurrentSpeed(speed ? speed * 3.6 : 0);
-      },
-      (err) => console.error("Error GPS:", err),
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
-    );
+      watchId.current = navigator.geolocation.watchPosition(
+        (pos) => {
+          const { latitude, longitude, speed, accuracy } = pos.coords;
+          
+          // Filtro de precisión: Ignorar puntos muy imprecisos (> 40m) para evitar saltos locos en el mapa
+          if (accuracy > 40) return;
+
+          const newPoint: GeoPoint = { 
+            latitude, 
+            longitude, 
+            timestamp: pos.timestamp, 
+            accuracy, 
+            speed: speed || 0 
+          };
+
+          setPath(prevPath => {
+            if (prevPath.length > 0) {
+              const lastPoint = prevPath[prevPath.length - 1];
+              const d = calculateDistance(lastPoint.latitude, lastPoint.longitude, newPoint.latitude, newPoint.longitude);
+              
+              // Evitar sumar micro-movimientos si estamos parados (ruido del GPS)
+              if (d > 0.002) { // más de 2 metros
+                setDistance(prev => prev + d);
+              }
+            }
+            return [...prevPath, newPoint];
+          });
+          
+          setCurrentSpeed(speed ? speed * 3.6 : 0);
+        },
+        (err) => console.error("Error GPS:", err),
+        { 
+          enableHighAccuracy: true, 
+          maximumAge: 0, 
+          timeout: 5000 
+        }
+      );
+    }, (err) => {
+      alert("Por favor, activa el GPS para poder trackear tu carrera.");
+    });
   };
 
   const handleStop = async () => {
