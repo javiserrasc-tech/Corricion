@@ -43,7 +43,7 @@ const RunStatus = {
 };
 
 // --- COMPONENTS ---
-const MapView = ({ path, isActive }) => {
+const MapView = ({ path, currentPos, isActive }) => {
   const mapRef = useRef(null);
   const polylineRef = useRef(null);
   const markerRef = useRef(null);
@@ -66,23 +66,37 @@ const MapView = ({ path, isActive }) => {
   }, []);
 
   useEffect(() => {
-    if (!mapRef.current || path.length === 0) return;
-    const last = path[path.length - 1];
-    const coords = path.map(p => [p.latitude, p.longitude]);
-    polylineRef.current?.setLatLngs(coords);
-    markerRef.current?.setLatLng([last.latitude, last.longitude]);
-    if (isActive) {
-      mapRef.current.panTo([last.latitude, last.longitude]);
-    } else if (path.length > 1) {
+    if (!mapRef.current) return;
+    
+    // Si hay un camino, lo dibujamos
+    if (path.length > 0) {
+      const coords = path.map(p => [p.latitude, p.longitude]);
+      polylineRef.current?.setLatLngs(coords);
+    } else {
+      polylineRef.current?.setLatLngs([]);
+    }
+
+    // Posición actual (del path o del pre-calentamiento)
+    const pos = (path.length > 0) ? path[path.length - 1] : currentPos;
+    
+    if (pos) {
+      markerRef.current?.setLatLng([pos.latitude, pos.longitude]);
+      // En modo activo o IDLE inicial, seguimos la cámara
+      if (isActive || path.length === 0) {
+        mapRef.current.panTo([pos.latitude, pos.longitude]);
+      }
+    }
+
+    if (!isActive && path.length > 1) {
       mapRef.current.fitBounds(polylineRef.current.getBounds(), { padding: [50, 50] });
     }
-  }, [path, isActive]);
+  }, [path, currentPos, isActive]);
 
   return h('div', { className: "relative w-full h-64 rounded-[2.5rem] overflow-hidden border border-slate-800 shadow-inner bg-slate-900 group" },
     h('div', { ref: containerRef, className: "w-full h-full z-0" }),
     h('div', { className: "absolute top-4 left-1/2 -translate-x-1/2 bg-slate-950/80 backdrop-blur-md px-4 py-1.5 rounded-full border border-blue-500/20 z-[1000] flex items-center gap-2" },
       h('div', { className: "w-2 h-2 rounded-full bg-blue-500 animate-pulse" }),
-      h('span', { className: "text-[9px] font-black uppercase tracking-[0.2em] text-blue-400" }, "Posición GPS")
+      h('span', { className: "text-[9px] font-black uppercase tracking-[0.2em] text-blue-400" }, "Calibrando GPS")
     )
   );
 };
@@ -119,65 +133,109 @@ const App = () => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [currentSpeed, setCurrentSpeed] = useState(0);
   const [history, setHistory] = useState([]);
+  
+  // GPS Warm-up states
+  const [currentPos, setCurrentPos] = useState(null);
+  const [accuracy, setAccuracy] = useState(null);
 
   const watchId = useRef(null);
   const timerInterval = useRef(null);
   const startTimeRef = useRef(null);
   const accumulatedTimeRef = useRef(0);
   const wakeLockRef = useRef(null);
+  const fileInputRef = useRef(null);
 
-  // Wake Lock Logic - Improved error handling for Permission Policy
+  // Status-aware refs to use inside the Geolocation callback
+  const statusRef = useRef(status);
+  useEffect(() => { statusRef.current = status; }, [status]);
+
+  // --- GPS WARM-UP (Inicia al montar) ---
   useEffect(() => {
-    const requestWakeLock = async () => {
-      if ('wakeLock' in navigator) {
-        try {
-          // Check if we already have one
-          if (!wakeLockRef.current) {
-            wakeLockRef.current = await navigator.wakeLock.request('screen');
-            console.log('Wake Lock Activo');
-            
-            // Re-request if visibility changes (browser requirement)
-            wakeLockRef.current.addEventListener('release', () => {
-              console.log('Wake Lock liberado externamente');
-            });
-          }
-        } catch (err) {
-          // If disallowed by policy, we log but don't break the app
-          console.warn('Wake Lock disallowed by permissions policy or other error:', err.message);
-        }
-      }
-    };
-
-    const releaseWakeLock = async () => {
-      if (wakeLockRef.current) {
-        try {
-          await wakeLockRef.current.release();
-          wakeLockRef.current = null;
-          console.log('Wake Lock Liberado');
-        } catch (err) {
-          console.error('Error liberando Wake Lock:', err);
-        }
-      }
-    };
-
-    if (status === RunStatus.RUNNING) {
-      requestWakeLock();
-    } else {
-      releaseWakeLock();
+    if (!navigator.geolocation) {
+      alert("GPS no disponible");
+      return;
     }
 
-    // Handle visibility changes which automatically release wake lock
-    const handleVisibilityChange = () => {
-      if (status === RunStatus.RUNNING && document.visibilityState === 'visible') {
-        requestWakeLock();
+    watchId.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude, speed, accuracy: acc } = pos.coords;
+        setCurrentPos({ latitude, longitude });
+        setAccuracy(acc);
+
+        // Si estamos corriendo, grabamos datos
+        if (statusRef.current === RunStatus.RUNNING) {
+          if (acc > 50) return; // Ignorar muy imprecisos si estamos corriendo
+
+          setPath(prev => {
+            const last = prev[prev.length - 1];
+            if (last) {
+              const d = calculateDistance(last.latitude, last.longitude, latitude, longitude);
+              // Filtro de ruido: solo sumamos si el movimiento es realista (> 3 metros)
+              if (d > 0.003) {
+                setDistance(dist => dist + d);
+              }
+            }
+            return [...prev, { latitude, longitude, timestamp: pos.timestamp }];
+          });
+          setCurrentSpeed(speed ? speed * 3.6 : 0);
+        }
+      },
+      (err) => console.warn("GPS Error:", err.message),
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+    );
+
+    return () => {
+      if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
+    };
+  }, []);
+
+  // --- DATA MANAGEMENT ---
+  const exportData = () => {
+    try {
+      const dataStr = JSON.stringify(history, null, 2);
+      const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+      const linkElement = document.createElement('a');
+      linkElement.setAttribute('href', dataUri);
+      linkElement.setAttribute('download', 'corricion_backup.json');
+      linkElement.click();
+    } catch (e) { alert("Error al exportar"); }
+  };
+
+  const importData = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const json = JSON.parse(e.target.result);
+        if (Array.isArray(json)) {
+          setHistory(json);
+          localStorage.setItem('corricion_history', JSON.stringify(json));
+          alert("Importado con éxito");
+        }
+      } catch (err) { alert("Error al importar"); }
+    };
+    reader.readAsText(file);
+  };
+
+  // Wake Lock Logic
+  useEffect(() => {
+    const requestWakeLock = async () => {
+      if ('wakeLock' in navigator && status === RunStatus.RUNNING) {
+        try {
+          wakeLockRef.current = await navigator.wakeLock.request('screen');
+        } catch (err) { console.warn('Wake Lock error:', err.message); }
       }
     };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      releaseWakeLock();
+    const releaseWakeLock = async () => {
+      if (wakeLockRef.current) {
+        await wakeLockRef.current.release();
+        wakeLockRef.current = null;
+      }
     };
+    if (status === RunStatus.RUNNING) requestWakeLock();
+    else releaseWakeLock();
+    return () => releaseWakeLock();
   }, [status]);
 
   useEffect(() => {
@@ -192,15 +250,18 @@ const App = () => {
     if (saved) try { setHistory(JSON.parse(saved)); } catch (e) {}
   }, []);
 
-  const stopTracking = useCallback(() => {
-    if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
+  const stopTimers = useCallback(() => {
     if (timerInterval.current !== null) window.clearInterval(timerInterval.current);
-    watchId.current = null;
     timerInterval.current = null;
   }, []);
 
   const startTracking = () => {
-    if (!navigator.geolocation) return alert("Sin GPS");
+    // Si la precisión es muy mala, avisamos
+    if (accuracy && accuracy > 30) {
+      const proceed = confirm(`La señal GPS es débil (${Math.round(accuracy)}m). ¿Quieres empezar de todas formas? El track puede ser impreciso.`);
+      if (!proceed) return;
+    }
+
     setStatus(RunStatus.RUNNING);
     if (status === RunStatus.IDLE || status === RunStatus.COMPLETED) {
       setPath([]); setDistance(0); setElapsedTime(0); accumulatedTimeRef.current = 0;
@@ -209,26 +270,10 @@ const App = () => {
     timerInterval.current = window.setInterval(() => {
       if (startTimeRef.current) setElapsedTime(accumulatedTimeRef.current + (Date.now() - startTimeRef.current));
     }, 1000);
-    watchId.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        const { latitude, longitude, speed, accuracy } = pos.coords;
-        if (accuracy > 50) return;
-        setPath(prev => {
-          if (prev.length > 0) {
-            const last = prev[prev.length - 1];
-            const d = calculateDistance(last.latitude, last.longitude, latitude, longitude);
-            if (d > 0.003) setDistance(dist => dist + d);
-          }
-          return [...prev, { latitude, longitude, timestamp: pos.timestamp }];
-        });
-        setCurrentSpeed(speed ? speed * 3.6 : 0);
-      },
-      null, { enableHighAccuracy: true }
-    );
   };
 
   const handleStop = () => {
-    stopTracking();
+    stopTimers();
     const finalDuration = accumulatedTimeRef.current + (startTimeRef.current ? (Date.now() - startTimeRef.current) : 0);
     const session = {
       id: Date.now().toString(),
@@ -246,25 +291,51 @@ const App = () => {
 
   const currentPace = distance > 0 ? (elapsedTime / 60000) / distance : 0;
 
+  // Signal UI logic
+  const getSignalColor = () => {
+    if (!accuracy) return 'bg-slate-700';
+    if (accuracy < 15) return 'bg-emerald-500 shadow-emerald-500/50';
+    if (accuracy < 30) return 'bg-amber-500 shadow-amber-500/50';
+    return 'bg-red-500 shadow-red-500/50';
+  };
+
+  const getSignalLabel = () => {
+    if (!accuracy) return 'Sin señal';
+    if (accuracy < 15) return 'Excelente';
+    if (accuracy < 30) return 'Media';
+    return 'Baja';
+  };
+
   return h('div', { className: "flex flex-col h-full bg-slate-950 text-slate-50 overflow-hidden" },
     h('header', { className: "px-6 pt-[calc(1.5rem+var(--sat))] pb-4 flex items-center justify-between border-b border-slate-900 bg-slate-900/50 backdrop-blur-xl z-50" },
       h('div', { className: "flex items-center gap-2" },
         h('div', { className: "bg-blue-600 p-2 rounded-xl shadow-lg shadow-blue-500/20" }, h(Lucide.Zap, { className: "w-5 h-5 text-white fill-current" })),
         h('h1', { className: "text-xl font-black italic tracking-tighter uppercase" }, "CORRI", h('span', { className: "text-blue-500" }, "CIÓN"))
+      ),
+      h('div', { className: "flex items-center gap-2 px-3 py-1 bg-slate-900/50 rounded-full border border-slate-800" },
+        h('div', { className: `w-2 h-2 rounded-full ${getSignalColor()} animate-pulse shadow-lg` }),
+        h('span', { className: "text-[9px] font-black uppercase tracking-widest text-slate-400" }, getSignalLabel())
       )
     ),
     h('main', { className: "flex-1 overflow-y-auto p-4 space-y-6 pb-40" },
       status !== RunStatus.IDLE ? h('div', { className: "space-y-6" },
-        h(MapView, { path, isActive: status === RunStatus.RUNNING }),
+        h(MapView, { path, currentPos, isActive: status === RunStatus.RUNNING }),
         h(RunDashboard, { elapsedTime, distance, currentSpeed, currentPace })
       ) : h('div', { className: "space-y-8 py-4" },
-        h('div', { className: "text-center py-6" },
-          h('div', { className: "inline-flex p-4 bg-blue-600/10 rounded-full mb-4" }, h(Lucide.Activity, { className: "w-12 h-12 text-blue-500" })),
-          h('h2', { className: "text-4xl font-black tracking-tighter uppercase italic" }, "Supera tus Límites"),
-          h('p', { className: "text-slate-500 text-xs font-bold uppercase tracking-widest mt-2" }, "Rastreador GPS en tiempo real")
+        h(MapView, { path: [], currentPos, isActive: false }),
+        h('div', { className: "text-center" },
+          h('h2', { className: "text-4xl font-black tracking-tighter uppercase italic" }, "Preparado para Correr"),
+          accuracy && accuracy > 20 && h('p', { className: "text-amber-500 text-[10px] font-black uppercase tracking-widest mt-2 animate-bounce" }, "⚠️ Esperando mejor señal GPS...")
         ),
         h('div', { className: "space-y-3" },
-          h('h3', { className: "text-xs font-black uppercase text-slate-400 px-2" }, "Historial"),
+          h('div', { className: "flex items-center justify-between px-2 mb-2" },
+            h('h3', { className: "text-xs font-black uppercase text-slate-400" }, "Historial"),
+            h('div', { className: "flex gap-2" },
+              h('button', { onClick: exportData, className: "p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400" }, h(Lucide.Download, { className: "w-4 h-4" })),
+              h('button', { onClick: () => fileInputRef.current.click(), className: "p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400" }, h(Lucide.Upload, { className: "w-4 h-4" })),
+              h('input', { type: 'file', ref: fileInputRef, onChange: importData, accept: '.json', className: 'hidden' })
+            )
+          ),
           history.length > 0 ? history.map(run => h('div', { key: run.id, className: "p-4 bg-slate-900/50 border border-slate-800 rounded-2xl flex items-center justify-between" },
             h('div', { className: "flex items-center gap-4" },
               h('div', { className: "w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-blue-500" }, h(Lucide.Map, { className: "w-5 h-5" })),
@@ -279,10 +350,13 @@ const App = () => {
     ),
     h('footer', { className: "fixed bottom-0 left-0 right-0 p-8 pb-[calc(2rem+var(--sab))] bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent z-[1000]" },
       h('div', { className: "max-w-md mx-auto" },
-        status === RunStatus.IDLE ? h('button', { onClick: startTracking, className: "w-full py-6 bg-blue-600 text-white font-black rounded-[2rem] flex items-center justify-center gap-3 active:scale-95" },
+        status === RunStatus.IDLE ? h('button', { 
+          onClick: startTracking, 
+          className: `w-full py-6 text-white font-black rounded-[2rem] flex items-center justify-center gap-3 active:scale-95 transition-all ${accuracy && accuracy > 30 ? 'bg-slate-700 opacity-80' : 'bg-blue-600 shadow-2xl shadow-blue-500/40'}` 
+        },
           h(Lucide.Play, { className: "w-6 h-6 fill-current" }), h('span', { className: "text-xl uppercase italic" }, "Empezar Carrera")
         ) : status === RunStatus.RUNNING ? h('div', { className: "flex gap-4" },
-          h('button', { onClick: () => { stopTracking(); accumulatedTimeRef.current += (Date.now() - startTimeRef.current); setStatus(RunStatus.PAUSED); }, className: "flex-1 py-6 bg-slate-800 text-white font-black rounded-[2rem] flex items-center justify-center gap-2" },
+          h('button', { onClick: () => { stopTimers(); accumulatedTimeRef.current += (Date.now() - startTimeRef.current); setStatus(RunStatus.PAUSED); }, className: "flex-1 py-6 bg-slate-800 text-white font-black rounded-[2rem] flex items-center justify-center gap-2" },
             h(Lucide.Pause, { className: "w-6 h-6" }), h('span', { className: "uppercase italic" }, "Pausa")
           ),
           h('button', { onClick: handleStop, className: "flex-1 py-6 bg-red-600 text-white font-black rounded-[2rem] flex items-center justify-center gap-2" },
