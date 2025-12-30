@@ -19,6 +19,18 @@ const App: React.FC = () => {
   const startTimeRef = useRef<number | null>(null);
   const accumulatedTimeRef = useRef(0);
 
+  // Manejo de la pantalla de carga inicial
+  useEffect(() => {
+    const loader = document.getElementById('loading-screen');
+    if (loader) {
+      const timeout = setTimeout(() => {
+        loader.style.opacity = '0';
+        setTimeout(() => loader.remove(), 500);
+      }, 300);
+      return () => clearTimeout(timeout);
+    }
+  }, []);
+
   // Cargar historial
   useEffect(() => {
     const saved = localStorage.getItem('corricion_history');
@@ -108,7 +120,7 @@ const App: React.FC = () => {
     setStatus(RunStatus.PAUSED);
   };
 
-  const handleStop = async () => {
+  const handleStop = () => {
     stopTracking();
     if (startTimeRef.current && status === RunStatus.RUNNING) {
       accumulatedTimeRef.current += (Date.now() - startTimeRef.current);
@@ -172,7 +184,6 @@ const App: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-8 py-4">
-            {/* Hero Section */}
             <div className="text-center space-y-2 py-6">
               <div className="inline-flex p-4 bg-blue-600/10 rounded-full mb-4 border border-blue-500/10">
                 <Activity className="w-12 h-12 text-blue-500" />
@@ -181,7 +192,6 @@ const App: React.FC = () => {
               <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">Tu progreso en tiempo real</p>
             </div>
 
-            {/* History */}
             <div className="space-y-4">
               <div className="flex items-center justify-between px-2">
                 <h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-400">
@@ -218,7 +228,6 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* Footer / Controls */}
       <footer className="fixed bottom-0 left-0 right-0 p-8 pb-[calc(2rem+var(--sab))] bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent z-[1000]">
         <div className="max-w-md mx-auto">
           {status === RunStatus.IDLE && (
