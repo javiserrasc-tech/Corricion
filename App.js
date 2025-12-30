@@ -5,7 +5,7 @@ import L from 'leaflet';
 
 const h = React.createElement;
 
-// --- UTILS (Antiguo geoUtils.ts) ---
+// --- UTILS ---
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -35,7 +35,6 @@ const formatPace = (paceMinutes) => {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
-// --- CONSTANTS ---
 const RunStatus = {
   IDLE: 'IDLE',
   RUNNING: 'RUNNING',
@@ -43,7 +42,7 @@ const RunStatus = {
   COMPLETED: 'COMPLETED'
 };
 
-// --- COMPONENT: MapView ---
+// --- COMPONENTS ---
 const MapView = ({ path, isActive }) => {
   const mapRef = useRef(null);
   const polylineRef = useRef(null);
@@ -88,7 +87,6 @@ const MapView = ({ path, isActive }) => {
   );
 };
 
-// --- COMPONENT: StatCard ---
 const StatCard = ({ label, value, unit, color }) => (
   h('div', { className: "bg-slate-900/50 border border-slate-800 p-5 rounded-[2rem] flex flex-col items-center justify-center" },
     h('span', { className: "text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1" }, label),
@@ -99,7 +97,6 @@ const StatCard = ({ label, value, unit, color }) => (
   )
 );
 
-// --- COMPONENT: RunDashboard ---
 const RunDashboard = ({ elapsedTime, distance, currentSpeed, currentPace }) => (
   h('div', { className: "grid grid-cols-2 gap-4" },
     h('div', { className: "col-span-2 bg-slate-900 border border-slate-800 p-8 rounded-[2.5rem] flex flex-col items-center justify-center shadow-2xl relative overflow-hidden" },
@@ -114,7 +111,7 @@ const RunDashboard = ({ elapsedTime, distance, currentSpeed, currentPace }) => (
   )
 );
 
-// --- MAIN APP COMPONENT ---
+// --- MAIN APP ---
 const App = () => {
   const [status, setStatus] = useState(RunStatus.IDLE);
   const [path, setPath] = useState([]);
@@ -127,6 +124,61 @@ const App = () => {
   const timerInterval = useRef(null);
   const startTimeRef = useRef(null);
   const accumulatedTimeRef = useRef(0);
+  const wakeLockRef = useRef(null);
+
+  // Wake Lock Logic - Improved error handling for Permission Policy
+  useEffect(() => {
+    const requestWakeLock = async () => {
+      if ('wakeLock' in navigator) {
+        try {
+          // Check if we already have one
+          if (!wakeLockRef.current) {
+            wakeLockRef.current = await navigator.wakeLock.request('screen');
+            console.log('Wake Lock Activo');
+            
+            // Re-request if visibility changes (browser requirement)
+            wakeLockRef.current.addEventListener('release', () => {
+              console.log('Wake Lock liberado externamente');
+            });
+          }
+        } catch (err) {
+          // If disallowed by policy, we log but don't break the app
+          console.warn('Wake Lock disallowed by permissions policy or other error:', err.message);
+        }
+      }
+    };
+
+    const releaseWakeLock = async () => {
+      if (wakeLockRef.current) {
+        try {
+          await wakeLockRef.current.release();
+          wakeLockRef.current = null;
+          console.log('Wake Lock Liberado');
+        } catch (err) {
+          console.error('Error liberando Wake Lock:', err);
+        }
+      }
+    };
+
+    if (status === RunStatus.RUNNING) {
+      requestWakeLock();
+    } else {
+      releaseWakeLock();
+    }
+
+    // Handle visibility changes which automatically release wake lock
+    const handleVisibilityChange = () => {
+      if (status === RunStatus.RUNNING && document.visibilityState === 'visible') {
+        requestWakeLock();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      releaseWakeLock();
+    };
+  }, [status]);
 
   useEffect(() => {
     const loader = document.getElementById('loading-screen');
