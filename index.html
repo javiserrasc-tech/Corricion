@@ -12,9 +12,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   
-  <!-- Apple Touch Icon -->
-  <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/5556/5556499.png">
-  <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/5556/5556499.png">
+  <!-- App Icons -->
+  <link rel="apple-touch-icon" href="./icon.png">
+  <link rel="icon" type="image/png" href="./icon.png">
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://cdn.tailwindcss.com"></script>
@@ -55,20 +55,20 @@
     }
 
     .loading-icon {
-      width: 96px;
-      height: 96px;
+      width: 120px;
+      height: 120px;
       margin-bottom: 24px;
-      filter: drop-shadow(0 0 20px rgba(59, 130, 246, 0.4));
-      animation: float 3s ease-in-out infinite;
+      filter: drop-shadow(0 0 25px rgba(59, 130, 246, 0.6));
+      animation: float-pulse 3s ease-in-out infinite;
     }
 
-    @keyframes float {
-      0%, 100% { transform: translateY(0) rotate(0deg); }
-      50% { transform: translateY(-12px) rotate(5deg); }
+    @keyframes float-pulse {
+      0%, 100% { transform: translateY(0) scale(1); opacity: 1; }
+      50% { transform: translateY(-15px) scale(1.05); opacity: 0.8; }
     }
 
     .loading-bar-container {
-      width: 120px;
+      width: 140px;
       height: 4px;
       background: #0f172a;
       border-radius: 999px;
@@ -96,9 +96,9 @@
       font-style: italic;
       text-transform: uppercase;
       letter-spacing: 0.5em;
-      font-size: 12px;
+      font-size: 14px;
       color: #3b82f6;
-      text-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
+      text-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
     }
   </style>
 
@@ -119,14 +119,14 @@
 </head>
 <body>
   <div id="loading-screen">
-    <div class="relative flex items-center justify-center mb-2">
-      <div class="absolute w-32 h-32 bg-blue-600/10 blur-3xl rounded-full animate-pulse"></div>
-      <img src="https://cdn-icons-png.flaticon.com/512/5556/5556499.png" alt="Corrición Logo" class="loading-icon relative z-10">
+    <div class="relative flex items-center justify-center mb-4">
+      <div class="absolute w-40 h-40 bg-blue-600/20 blur-3xl rounded-full animate-pulse"></div>
+      <img src="./icon.png" alt="Corrición Logo" class="loading-icon relative z-10">
     </div>
     <div class="loading-bar-container">
       <div class="loading-bar-fill"></div>
     </div>
-    <p class="loading-text">CORRICIÓN</p>
+    <p class="loading-text tracking-[0.6em]">CORRICIÓN</p>
   </div>
   
   <div id="root"></div>

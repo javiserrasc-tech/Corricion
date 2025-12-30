@@ -316,11 +316,11 @@ const App = () => {
 
     h('header', { className: "px-6 pt-[calc(1.5rem+var(--sat))] pb-4 flex items-center justify-between border-b border-slate-900 bg-slate-900/50 backdrop-blur-xl z-50" },
       h('div', { className: "flex items-center gap-2" },
-        h('div', { className: "bg-blue-600 p-2 rounded-xl shadow-lg" }, h(Lucide.Footprints, { className: "w-5 h-5 text-white" })),
+        h('div', { className: "bg-blue-600 p-2 rounded-xl shadow-lg shadow-blue-500/30" }, h(Lucide.Zap, { className: "w-5 h-5 text-white fill-current" })),
         h('h1', { className: "text-xl font-black italic uppercase" }, "CORRI", h('span', { className: "text-blue-500" }, "CIÓN"))
       ),
       h('div', { className: "flex items-center gap-2 px-3 py-1 bg-slate-900/50 rounded-full border border-slate-800" },
-        h('div', { className: `w-2 h-2 rounded-full ${getSignalColor()} animate-pulse shadow-[0_0_8px_rgba(0,0,0,0.5)]` }),
+        h('div', { className: `w-2 h-2 rounded-full ${getSignalColor()} animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.3)]` }),
         h('span', { className: "text-[9px] font-black uppercase tracking-widest text-slate-400" }, accuracy ? `${Math.round(accuracy)}m` : 'Buscando...')
       )
     ),
