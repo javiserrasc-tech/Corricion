@@ -37,6 +37,7 @@ const formatPace = (paceMinutes) => {
 
 const RunStatus = {
   IDLE: 'IDLE',
+  COUNTDOWN: 'COUNTDOWN',
   RUNNING: 'RUNNING',
   PAUSED: 'PAUSED',
   COMPLETED: 'COMPLETED'
@@ -68,7 +69,6 @@ const MapView = ({ path, currentPos, isActive }) => {
   useEffect(() => {
     if (!mapRef.current) return;
     
-    // Si hay un camino, lo dibujamos
     if (path.length > 0) {
       const coords = path.map(p => [p.latitude, p.longitude]);
       polylineRef.current?.setLatLngs(coords);
@@ -76,12 +76,10 @@ const MapView = ({ path, currentPos, isActive }) => {
       polylineRef.current?.setLatLngs([]);
     }
 
-    // Posición actual (del path o del pre-calentamiento)
     const pos = (path.length > 0) ? path[path.length - 1] : currentPos;
     
     if (pos) {
       markerRef.current?.setLatLng([pos.latitude, pos.longitude]);
-      // En modo activo o IDLE inicial, seguimos la cámara
       if (isActive || path.length === 0) {
         mapRef.current.panTo([pos.latitude, pos.longitude]);
       }
@@ -92,11 +90,11 @@ const MapView = ({ path, currentPos, isActive }) => {
     }
   }, [path, currentPos, isActive]);
 
-  return h('div', { className: "relative w-full h-64 rounded-[2.5rem] overflow-hidden border border-slate-800 shadow-inner bg-slate-900 group" },
+  return h('div', { className: "relative w-full h-64 rounded-[2.5rem] overflow-hidden border border-slate-800 shadow-inner bg-slate-900" },
     h('div', { ref: containerRef, className: "w-full h-full z-0" }),
     h('div', { className: "absolute top-4 left-1/2 -translate-x-1/2 bg-slate-950/80 backdrop-blur-md px-4 py-1.5 rounded-full border border-blue-500/20 z-[1000] flex items-center gap-2" },
       h('div', { className: "w-2 h-2 rounded-full bg-blue-500 animate-pulse" }),
-      h('span', { className: "text-[9px] font-black uppercase tracking-[0.2em] text-blue-400" }, "Calibrando GPS")
+      h('span', { className: "text-[9px] font-black uppercase tracking-[0.2em] text-blue-400" }, "Vista en Vivo")
     )
   );
 };
@@ -134,9 +132,10 @@ const App = () => {
   const [currentSpeed, setCurrentSpeed] = useState(0);
   const [history, setHistory] = useState([]);
   
-  // GPS Warm-up states
+  // GPS Warm-up and Countdown
   const [currentPos, setCurrentPos] = useState(null);
   const [accuracy, setAccuracy] = useState(null);
+  const [countdown, setCountdown] = useState(null);
 
   const watchId = useRef(null);
   const timerInterval = useRef(null);
@@ -145,16 +144,12 @@ const App = () => {
   const wakeLockRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  // Status-aware refs to use inside the Geolocation callback
   const statusRef = useRef(status);
   useEffect(() => { statusRef.current = status; }, [status]);
 
-  // --- GPS WARM-UP (Inicia al montar) ---
+  // GPS WARM-UP (Inicia al montar)
   useEffect(() => {
-    if (!navigator.geolocation) {
-      alert("GPS no disponible");
-      return;
-    }
+    if (!navigator.geolocation) return;
 
     watchId.current = navigator.geolocation.watchPosition(
       (pos) => {
@@ -162,34 +157,41 @@ const App = () => {
         setCurrentPos({ latitude, longitude });
         setAccuracy(acc);
 
-        // Si estamos corriendo, grabamos datos
         if (statusRef.current === RunStatus.RUNNING) {
-          if (acc > 50) return; // Ignorar muy imprecisos si estamos corriendo
-
+          if (acc > 50) return;
           setPath(prev => {
             const last = prev[prev.length - 1];
             if (last) {
               const d = calculateDistance(last.latitude, last.longitude, latitude, longitude);
-              // Filtro de ruido: solo sumamos si el movimiento es realista (> 3 metros)
-              if (d > 0.003) {
-                setDistance(dist => dist + d);
-              }
+              if (d > 0.003) setDistance(dist => dist + d);
             }
             return [...prev, { latitude, longitude, timestamp: pos.timestamp }];
           });
           setCurrentSpeed(speed ? speed * 3.6 : 0);
         }
       },
-      (err) => console.warn("GPS Error:", err.message),
+      null,
       { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
     );
 
-    return () => {
-      if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
-    };
+    return () => { if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current); };
   }, []);
 
-  // --- DATA MANAGEMENT ---
+  // Countdown Logic
+  useEffect(() => {
+    if (countdown === null) return;
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    } else if (countdown === 0) {
+      const timer = setTimeout(() => {
+        setCountdown(null);
+        startSession();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [countdown]);
+
   const exportData = () => {
     try {
       const dataStr = JSON.stringify(history, null, 2);
@@ -213,68 +215,48 @@ const App = () => {
           localStorage.setItem('corricion_history', JSON.stringify(json));
           alert("Importado con éxito");
         }
-      } catch (err) { alert("Error al importar"); }
+      } catch (err) { alert("Archivo inválido"); }
     };
     reader.readAsText(file);
   };
 
-  // Wake Lock Logic
   useEffect(() => {
     const requestWakeLock = async () => {
       if ('wakeLock' in navigator && status === RunStatus.RUNNING) {
-        try {
-          wakeLockRef.current = await navigator.wakeLock.request('screen');
-        } catch (err) { console.warn('Wake Lock error:', err.message); }
-      }
-    };
-    const releaseWakeLock = async () => {
-      if (wakeLockRef.current) {
-        await wakeLockRef.current.release();
-        wakeLockRef.current = null;
+        try { wakeLockRef.current = await navigator.wakeLock.request('screen'); } catch (err) {}
       }
     };
     if (status === RunStatus.RUNNING) requestWakeLock();
-    else releaseWakeLock();
-    return () => releaseWakeLock();
+    else if (wakeLockRef.current) { wakeLockRef.current.release(); wakeLockRef.current = null; }
   }, [status]);
 
   useEffect(() => {
-    const loader = document.getElementById('loading-screen');
-    if (loader) {
-      setTimeout(() => {
-        loader.style.opacity = '0';
-        setTimeout(() => loader.remove(), 500);
-      }, 500);
-    }
     const saved = localStorage.getItem('corricion_history');
     if (saved) try { setHistory(JSON.parse(saved)); } catch (e) {}
+    const loader = document.getElementById('loading-screen');
+    if (loader) setTimeout(() => { loader.style.opacity = '0'; setTimeout(() => loader.remove(), 500); }, 300);
   }, []);
 
-  const stopTimers = useCallback(() => {
-    if (timerInterval.current !== null) window.clearInterval(timerInterval.current);
-    timerInterval.current = null;
-  }, []);
-
-  const startTracking = () => {
-    // Si la precisión es muy mala, avisamos
-    if (accuracy && accuracy > 30) {
-      const proceed = confirm(`La señal GPS es débil (${Math.round(accuracy)}m). ¿Quieres empezar de todas formas? El track puede ser impreciso.`);
-      if (!proceed) return;
-    }
-
+  const startSession = () => {
     setStatus(RunStatus.RUNNING);
-    if (status === RunStatus.IDLE || status === RunStatus.COMPLETED) {
-      setPath([]); setDistance(0); setElapsedTime(0); accumulatedTimeRef.current = 0;
-    }
+    setPath([]); setDistance(0); setElapsedTime(0); accumulatedTimeRef.current = 0;
     startTimeRef.current = Date.now();
     timerInterval.current = window.setInterval(() => {
       if (startTimeRef.current) setElapsedTime(accumulatedTimeRef.current + (Date.now() - startTimeRef.current));
     }, 1000);
   };
 
+  const triggerStart = () => {
+    if (accuracy && accuracy > 30) {
+      if (!confirm(`Señal GPS débil (${Math.round(accuracy)}m). ¿Empezar igual?`)) return;
+    }
+    setStatus(RunStatus.COUNTDOWN);
+    setCountdown(3);
+  };
+
   const handleStop = () => {
-    stopTimers();
-    const finalDuration = accumulatedTimeRef.current + (startTimeRef.current ? (Date.now() - startTimeRef.current) : 0);
+    if (timerInterval.current) window.clearInterval(timerInterval.current);
+    const finalDuration = elapsedTime;
     const session = {
       id: Date.now().toString(),
       startTime: Date.now() - finalDuration,
@@ -290,45 +272,43 @@ const App = () => {
   };
 
   const currentPace = distance > 0 ? (elapsedTime / 60000) / distance : 0;
-
-  // Signal UI logic
   const getSignalColor = () => {
     if (!accuracy) return 'bg-slate-700';
-    if (accuracy < 15) return 'bg-emerald-500 shadow-emerald-500/50';
-    if (accuracy < 30) return 'bg-amber-500 shadow-amber-500/50';
-    return 'bg-red-500 shadow-red-500/50';
+    if (accuracy < 10) return 'bg-emerald-500';
+    if (accuracy < 30) return 'bg-amber-500';
+    return 'bg-red-500';
   };
 
-  const getSignalLabel = () => {
-    if (!accuracy) return 'Sin señal';
-    if (accuracy < 15) return 'Excelente';
-    if (accuracy < 30) return 'Media';
-    return 'Baja';
-  };
+  return h('div', { className: "flex flex-col h-full bg-slate-950 text-slate-50 overflow-hidden relative" },
+    // COUNTDOWN OVERLAY
+    countdown !== null && h('div', { className: "absolute inset-0 z-[2000] bg-slate-950/80 backdrop-blur-xl flex flex-col items-center justify-center animate-in fade-in duration-300" },
+      h('span', { className: "text-[120px] font-black italic text-blue-500 animate-ping" }, countdown === 0 ? "GO!" : countdown),
+      h('p', { className: "text-slate-400 font-black uppercase tracking-[0.5em] text-sm mt-8" }, "Prepárate...")
+    ),
 
-  return h('div', { className: "flex flex-col h-full bg-slate-950 text-slate-50 overflow-hidden" },
     h('header', { className: "px-6 pt-[calc(1.5rem+var(--sat))] pb-4 flex items-center justify-between border-b border-slate-900 bg-slate-900/50 backdrop-blur-xl z-50" },
       h('div', { className: "flex items-center gap-2" },
-        h('div', { className: "bg-blue-600 p-2 rounded-xl shadow-lg shadow-blue-500/20" }, h(Lucide.Zap, { className: "w-5 h-5 text-white fill-current" })),
-        h('h1', { className: "text-xl font-black italic tracking-tighter uppercase" }, "CORRI", h('span', { className: "text-blue-500" }, "CIÓN"))
+        h('div', { className: "bg-blue-600 p-2 rounded-xl shadow-lg" }, h(Lucide.Zap, { className: "w-5 h-5 text-white fill-current" })),
+        h('h1', { className: "text-xl font-black italic uppercase" }, "CORRI", h('span', { className: "text-blue-500" }, "CIÓN"))
       ),
       h('div', { className: "flex items-center gap-2 px-3 py-1 bg-slate-900/50 rounded-full border border-slate-800" },
-        h('div', { className: `w-2 h-2 rounded-full ${getSignalColor()} animate-pulse shadow-lg` }),
-        h('span', { className: "text-[9px] font-black uppercase tracking-widest text-slate-400" }, getSignalLabel())
+        h('div', { className: `w-2 h-2 rounded-full ${getSignalColor()} animate-pulse` }),
+        h('span', { className: "text-[9px] font-black uppercase tracking-widest text-slate-400" }, accuracy ? `${Math.round(accuracy)}m` : 'Buscando...')
       )
     ),
+
     h('main', { className: "flex-1 overflow-y-auto p-4 space-y-6 pb-40" },
-      status !== RunStatus.IDLE ? h('div', { className: "space-y-6" },
+      (status === RunStatus.RUNNING || status === RunStatus.PAUSED || status === RunStatus.COMPLETED) ? h('div', { className: "space-y-6" },
         h(MapView, { path, currentPos, isActive: status === RunStatus.RUNNING }),
         h(RunDashboard, { elapsedTime, distance, currentSpeed, currentPace })
-      ) : h('div', { className: "space-y-8 py-4" },
+      ) : h('div', { className: "space-y-8" },
         h(MapView, { path: [], currentPos, isActive: false }),
-        h('div', { className: "text-center" },
-          h('h2', { className: "text-4xl font-black tracking-tighter uppercase italic" }, "Preparado para Correr"),
-          accuracy && accuracy > 20 && h('p', { className: "text-amber-500 text-[10px] font-black uppercase tracking-widest mt-2 animate-bounce" }, "⚠️ Esperando mejor señal GPS...")
+        h('div', { className: "text-center py-4" },
+          h('h2', { className: "text-4xl font-black tracking-tighter uppercase italic" }, "Listo para Volar"),
+          accuracy && accuracy > 25 && h('p', { className: "text-amber-500 text-[10px] font-black uppercase tracking-widest mt-2" }, "⚠️ Esperando mejor señal GPS...")
         ),
         h('div', { className: "space-y-3" },
-          h('div', { className: "flex items-center justify-between px-2 mb-2" },
+          h('div', { className: "flex items-center justify-between px-2" },
             h('h3', { className: "text-xs font-black uppercase text-slate-400" }, "Historial"),
             h('div', { className: "flex gap-2" },
               h('button', { onClick: exportData, className: "p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400" }, h(Lucide.Download, { className: "w-4 h-4" })),
@@ -344,26 +324,27 @@ const App = () => {
                 h('div', { className: "text-[10px] text-slate-500 uppercase font-bold" }, `${new Date(run.startTime).toLocaleDateString()} • ${formatPace(run.averagePace)}/km`)
               )
             )
-          )) : h('div', { className: "p-8 border-2 border-dashed border-slate-900 rounded-[2rem] text-center text-slate-600 text-xs uppercase font-bold" }, "No hay carreras aún")
+          )) : h('div', { className: "p-8 border-2 border-dashed border-slate-900 rounded-[2rem] text-center text-slate-600 text-[10px] uppercase font-bold" }, "Sin carreras registradas")
         )
       )
     ),
-    h('footer', { className: "fixed bottom-0 left-0 right-0 p-8 pb-[calc(2rem+var(--sab))] bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent z-[1000]" },
+
+    h('footer', { className: "fixed bottom-0 left-0 right-0 p-8 pb-[calc(2rem+var(--sab))] bg-gradient-to-t from-slate-950 to-transparent z-[1000]" },
       h('div', { className: "max-w-md mx-auto" },
-        status === RunStatus.IDLE ? h('button', { 
-          onClick: startTracking, 
-          className: `w-full py-6 text-white font-black rounded-[2rem] flex items-center justify-center gap-3 active:scale-95 transition-all ${accuracy && accuracy > 30 ? 'bg-slate-700 opacity-80' : 'bg-blue-600 shadow-2xl shadow-blue-500/40'}` 
+        status === RunStatus.IDLE || status === RunStatus.COUNTDOWN ? h('button', { 
+          onClick: triggerStart, disabled: status === RunStatus.COUNTDOWN,
+          className: `w-full py-6 text-white font-black rounded-[2rem] flex items-center justify-center gap-3 active:scale-95 transition-all bg-blue-600 shadow-2xl shadow-blue-500/40` 
         },
-          h(Lucide.Play, { className: "w-6 h-6 fill-current" }), h('span', { className: "text-xl uppercase italic" }, "Empezar Carrera")
+          h(Lucide.Play, { className: "w-6 h-6 fill-current" }), h('span', { className: "text-xl uppercase italic" }, status === RunStatus.COUNTDOWN ? "Iniciando..." : "Empezar Carrera")
         ) : status === RunStatus.RUNNING ? h('div', { className: "flex gap-4" },
-          h('button', { onClick: () => { stopTimers(); accumulatedTimeRef.current += (Date.now() - startTimeRef.current); setStatus(RunStatus.PAUSED); }, className: "flex-1 py-6 bg-slate-800 text-white font-black rounded-[2rem] flex items-center justify-center gap-2" },
+          h('button', { onClick: () => setStatus(RunStatus.PAUSED), className: "flex-1 py-6 bg-slate-800 text-white font-black rounded-[2rem] flex items-center justify-center gap-2" },
             h(Lucide.Pause, { className: "w-6 h-6" }), h('span', { className: "uppercase italic" }, "Pausa")
           ),
           h('button', { onClick: handleStop, className: "flex-1 py-6 bg-red-600 text-white font-black rounded-[2rem] flex items-center justify-center gap-2" },
             h(Lucide.Square, { className: "w-6 h-6 fill-current" }), h('span', { className: "uppercase italic" }, "Parar")
           )
         ) : status === RunStatus.PAUSED ? h('div', { className: "flex gap-4" },
-          h('button', { onClick: startTracking, className: "flex-1 py-6 bg-emerald-600 text-white font-black rounded-[2rem] flex items-center justify-center gap-2" },
+          h('button', { onClick: () => setStatus(RunStatus.RUNNING), className: "flex-1 py-6 bg-emerald-600 text-white font-black rounded-[2rem] flex items-center justify-center gap-2" },
             h(Lucide.Play, { className: "w-6 h-6 fill-current" }), h('span', { className: "uppercase italic" }, "Seguir")
           ),
           h('button', { onClick: handleStop, className: "flex-1 py-6 bg-red-600 text-white font-black rounded-[2rem] flex items-center justify-center gap-2" },
