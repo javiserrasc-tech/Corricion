@@ -95,8 +95,8 @@ const MapView = ({ path, currentPos, isActive }) => {
   );
 };
 
-const StatCard = ({ label, value, unit, color }) => (
-  h('div', { className: "bg-slate-900/50 border border-slate-800 p-5 rounded-[2rem] flex flex-col items-center justify-center" },
+const StatCard = ({ label, value, unit, color, className = "" }) => (
+  h('div', { className: `bg-slate-900/50 border border-slate-800 p-5 rounded-[2rem] flex flex-col items-center justify-center ${className}` },
     h('span', { className: "text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1" }, label),
     h('div', { className: "flex items-baseline gap-1" },
       h('span', { className: `text-3xl font-black ${color} font-mono tracking-tighter` }, value),
@@ -114,8 +114,7 @@ const RunDashboard = ({ elapsedTime, distance, currentSpeed, currentPace }) => (
     ),
     h(StatCard, { label: "Distancia", value: distance.toFixed(2), unit: "km", color: "text-emerald-400" }),
     h(StatCard, { label: "Velocidad", value: currentSpeed.toFixed(1), unit: "km/h", color: "text-orange-400" }),
-    h(StatCard, { label: "Ritmo", value: formatPace(currentPace), unit: "min/km", color: "text-indigo-400" }),
-    h(StatCard, { label: "Progreso", value: Math.min(100, (distance / 5) * 100).toFixed(0), unit: "%", color: "text-pink-400" })
+    h(StatCard, { label: "Ritmo Medio", value: formatPace(currentPace), unit: "min/km", color: "text-indigo-400", className: "col-span-2" })
   )
 );
 
@@ -142,7 +141,6 @@ const App = () => {
   const statusRef = useRef(status);
   useEffect(() => { statusRef.current = status; }, [status]);
 
-  // Limpieza integral del timer
   const clearTimer = useCallback(() => {
     if (timerInterval.current) {
       window.clearInterval(timerInterval.current);
@@ -150,7 +148,6 @@ const App = () => {
     }
   }, []);
 
-  // Iniciar cronómetro real
   const startTimer = useCallback(() => {
     clearTimer();
     startTimeRef.current = Date.now();
@@ -161,7 +158,6 @@ const App = () => {
     }, 1000);
   }, [clearTimer]);
 
-  // GPS Warm-up
   useEffect(() => {
     if (!navigator.geolocation) return;
     watchId.current = navigator.geolocation.watchPosition(
@@ -188,7 +184,6 @@ const App = () => {
     return () => { if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current); };
   }, []);
 
-  // Countdown Logic
   useEffect(() => {
     if (countdown === null) return;
     if (countdown > 0) {
@@ -308,7 +303,6 @@ const App = () => {
   const currentPace = distance > 0 ? (elapsedTime / 60000) / distance : 0;
 
   return h('div', { className: "flex flex-col h-full bg-slate-950 text-slate-50 overflow-hidden relative" },
-    // COUNTDOWN OVERLAY
     countdown !== null && h('div', { className: "absolute inset-0 z-[2000] bg-slate-950/80 backdrop-blur-xl flex flex-col items-center justify-center animate-in fade-in duration-300" },
       h('span', { className: "text-[120px] font-black italic text-blue-500 animate-ping" }, countdown === 0 ? "GO!" : countdown),
       h('p', { className: "text-slate-400 font-black uppercase tracking-[0.5em] text-sm mt-8" }, "Prepárate...")
@@ -316,11 +310,11 @@ const App = () => {
 
     h('header', { className: "px-6 pt-[calc(1.5rem+var(--sat))] pb-4 flex items-center justify-between border-b border-slate-900 bg-slate-900/50 backdrop-blur-xl z-50" },
       h('div', { className: "flex items-center gap-2" },
-        h('div', { className: "bg-blue-600 p-2 rounded-xl shadow-lg" }, h(Lucide.Zap, { className: "w-5 h-5 text-white fill-current" })),
+        h('div', { className: "bg-blue-600 p-2 rounded-xl shadow-lg shadow-blue-500/30" }, h(Lucide.Zap, { className: "w-5 h-5 text-white fill-current" })),
         h('h1', { className: "text-xl font-black italic uppercase" }, "CORRI", h('span', { className: "text-blue-500" }, "CIÓN"))
       ),
       h('div', { className: "flex items-center gap-2 px-3 py-1 bg-slate-900/50 rounded-full border border-slate-800" },
-        h('div', { className: `w-2 h-2 rounded-full ${getSignalColor()} animate-pulse shadow-[0_0_8px_rgba(0,0,0,0.5)]` }),
+        h('div', { className: `w-2 h-2 rounded-full ${getSignalColor()} animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.3)]` }),
         h('span', { className: "text-[9px] font-black uppercase tracking-widest text-slate-400" }, accuracy ? `${Math.round(accuracy)}m` : 'Buscando...')
       )
     ),

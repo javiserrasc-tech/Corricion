@@ -11,7 +11,10 @@
   <meta name="theme-color" content="#020617">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/5556/5556499.png">
+  
+  <!-- App Icons -->
+  <link rel="apple-touch-icon" href="./icon.png">
+  <link rel="icon" type="image/png" href="./icon.png">
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://cdn.tailwindcss.com"></script>
@@ -50,6 +53,53 @@
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       z-index: 9999; transition: opacity 0.5s ease-out;
     }
+
+    .loading-icon {
+      width: 120px;
+      height: 120px;
+      margin-bottom: 24px;
+      filter: drop-shadow(0 0 25px rgba(59, 130, 246, 0.6));
+      animation: float-pulse 3s ease-in-out infinite;
+    }
+
+    @keyframes float-pulse {
+      0%, 100% { transform: translateY(0) scale(1); opacity: 1; }
+      50% { transform: translateY(-15px) scale(1.05); opacity: 0.8; }
+    }
+
+    .loading-bar-container {
+      width: 140px;
+      height: 4px;
+      background: #0f172a;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-bottom: 16px;
+      position: relative;
+    }
+
+    .loading-bar-fill {
+      position: absolute;
+      top: 0; bottom: 0;
+      width: 60%;
+      background: linear-gradient(90deg, transparent, #3b82f6, transparent);
+      animation: loading-slide 1.2s infinite ease-in-out;
+    }
+
+    @keyframes loading-slide {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(200%); }
+    }
+
+    .loading-text {
+      font-family: 'Inter', sans-serif;
+      font-weight: 800;
+      font-style: italic;
+      text-transform: uppercase;
+      letter-spacing: 0.5em;
+      font-size: 14px;
+      color: #3b82f6;
+      text-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
+    }
   </style>
 
   <script type="importmap">
@@ -69,9 +119,16 @@
 </head>
 <body>
   <div id="loading-screen">
-    <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-    <p class="text-blue-400 font-black uppercase tracking-widest text-[10px]">Cargando Corrición...</p>
+    <div class="relative flex items-center justify-center mb-4">
+      <div class="absolute w-40 h-40 bg-blue-600/20 blur-3xl rounded-full animate-pulse"></div>
+      <img src="./icon.png" alt="Corrición Logo" class="loading-icon relative z-10">
+    </div>
+    <div class="loading-bar-container">
+      <div class="loading-bar-fill"></div>
+    </div>
+    <p class="loading-text tracking-[0.6em]">CORRICIÓN</p>
   </div>
+  
   <div id="root"></div>
   <script type="module" src="index.js"></script>
   <script>
