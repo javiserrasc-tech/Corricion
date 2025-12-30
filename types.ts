@@ -15,7 +15,6 @@ export interface RunSession {
   distanceKm: number;
   averagePace: number; // minutes per km
   status: RunStatus;
-  aiInsight?: string;
 }
 
 export enum RunStatus {

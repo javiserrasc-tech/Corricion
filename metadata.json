@@ -1,7 +1,7 @@
 {
   "name": "Corrición",
   "short_name": "Corrición",
-  "description": "Tu entrenador personal de running con IA.",
+  "description": "Tu rastreador personal de running.",
   "requestFramePermissions": [
     "geolocation"
   ]

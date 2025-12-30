@@ -1,11 +1,10 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, Square, History, Zap, Sparkles, ChevronRight, Activity, Map as MapIcon, RotateCcw } from 'lucide-react';
+import { Play, Pause, Square, History, Zap, ChevronRight, Activity, Map as MapIcon, RotateCcw } from 'lucide-react';
 import { RunStatus, RunSession, GeoPoint } from './types.ts';
 import { calculateDistance, formatTime, formatPace } from './utils/geoUtils.ts';
 import MapView from './components/MapView.tsx';
 import RunDashboard from './components/RunDashboard.tsx';
-import { getRunInsight } from './services/geminiService.ts';
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<RunStatus>(RunStatus.IDLE);
@@ -14,7 +13,6 @@ const App: React.FC = () => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [currentSpeed, setCurrentSpeed] = useState(0);
   const [history, setHistory] = useState<RunSession[]>([]);
-  const [lastInsight, setLastInsight] = useState<string | null>(null);
 
   const watchId = useRef<number | null>(null);
   const timerInterval = useRef<number | null>(null);
@@ -57,7 +55,6 @@ const App: React.FC = () => {
       setDistance(0);
       setElapsedTime(0);
       accumulatedTimeRef.current = 0;
-      setLastInsight(null);
     }
 
     startTimeRef.current = Date.now();
@@ -132,15 +129,6 @@ const App: React.FC = () => {
 
     setStatus(RunStatus.COMPLETED);
 
-    // Obtener consejo de la IA
-    try {
-      const insight = await getRunInsight(session);
-      session.aiInsight = insight;
-      setLastInsight(insight);
-    } catch (e) {
-      setLastInsight("¡Gran carrera! Mantén la consistencia.");
-    }
-
     // Guardar en historial
     setHistory(prev => {
       const newHistory = [session, ...prev].slice(0, 10);
@@ -181,18 +169,6 @@ const App: React.FC = () => {
               currentSpeed={currentSpeed} 
               currentPace={currentPace} 
             />
-
-            {lastInsight && (
-              <div className="p-6 bg-gradient-to-br from-blue-600/20 to-indigo-600/10 border border-blue-500/30 rounded-[2rem] shadow-2xl relative overflow-hidden group">
-                <div className="absolute top-0 right-0 p-4 opacity-20 group-hover:opacity-40 transition-opacity">
-                  <Sparkles className="w-12 h-12 text-blue-400" />
-                </div>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">Feedback de Coach IA</span>
-                </div>
-                <p className="text-lg leading-relaxed text-blue-50 italic font-medium">"{lastInsight}"</p>
-              </div>
-            )}
           </div>
         ) : (
           <div className="space-y-8 py-4">
@@ -202,7 +178,7 @@ const App: React.FC = () => {
                 <Activity className="w-12 h-12 text-blue-500" />
               </div>
               <h2 className="text-4xl font-black tracking-tighter uppercase italic leading-none">Supera tus<br/>Límites.</h2>
-              <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">Trackeado por Inteligencia Artificial</p>
+              <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">Tu progreso en tiempo real</p>
             </div>
 
             {/* History */}
