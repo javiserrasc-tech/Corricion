@@ -105,12 +105,13 @@ const StatCard = ({ label, value, unit, color, className = "" }) => (
   )
 );
 
-const RunDashboard = ({ elapsedTime, distance, currentSpeed, currentPace }) => (
+const RunDashboard = ({ elapsedTime, distance, currentSpeed, currentPace, wakeLockSupported }) => (
   h('div', { className: "grid grid-cols-2 gap-4" },
     h('div', { className: "col-span-2 bg-slate-900 border border-slate-800 p-8 rounded-[2.5rem] flex flex-col items-center justify-center shadow-2xl relative overflow-hidden" },
       h('div', { className: "absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-600 to-indigo-600" }),
       h('span', { className: "text-xs font-black uppercase tracking-[0.3em] text-slate-500 mb-2" }, "Cronómetro"),
-      h('span', { className: "text-6xl md:text-7xl font-black text-white font-mono tracking-tighter" }, formatTime(elapsedTime))
+      h('span', { className: "text-6xl md:text-7xl font-black text-white font-mono tracking-tighter" }, formatTime(elapsedTime)),
+      !wakeLockSupported && h('p', { className: "text-[8px] font-black uppercase text-amber-500 mt-2 tracking-widest" }, "⚠️ Mantén pantalla encendida para precisión")
     ),
     h(StatCard, { label: "Distancia", value: distance.toFixed(2), unit: "km", color: "text-emerald-400" }),
     h(StatCard, { label: "Velocidad", value: currentSpeed.toFixed(1), unit: "km/h", color: "text-orange-400" }),
@@ -130,16 +131,55 @@ const App = () => {
   const [currentPos, setCurrentPos] = useState(null);
   const [accuracy, setAccuracy] = useState(null);
   const [countdown, setCountdown] = useState(null);
+  const [wakeLockSupported] = useState('wakeLock' in navigator);
 
   const watchId = useRef(null);
   const timerInterval = useRef(null);
   const startTimeRef = useRef(null);
   const accumulatedTimeRef = useRef(0);
-  const wakeLockRef = useRef(null);
+  const wakeLockSentinel = useRef(null);
   const fileInputRef = useRef(null);
+  const lastUpdateRef = useRef(Date.now());
 
   const statusRef = useRef(status);
   useEffect(() => { statusRef.current = status; }, [status]);
+
+  // Screen Wake Lock Logic
+  const requestWakeLock = useCallback(async () => {
+    if (!wakeLockSupported) return;
+    try {
+      wakeLockSentinel.current = await navigator.wakeLock.request('screen');
+      wakeLockSentinel.current.addEventListener('release', () => {
+        console.log('Wake Lock was released');
+      });
+    } catch (err) {
+      console.warn(`Wake Lock Error: ${err.message}`);
+    }
+  }, [wakeLockSupported]);
+
+  const releaseWakeLock = useCallback(async () => {
+    if (wakeLockSentinel.current) {
+      await wakeLockSentinel.current.release();
+      wakeLockSentinel.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (status === RunStatus.RUNNING) {
+      requestWakeLock();
+    } else {
+      releaseWakeLock();
+    }
+    
+    // Re-request on visibility change if running
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && statusRef.current === RunStatus.RUNNING) {
+        requestWakeLock();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [status, requestWakeLock, releaseWakeLock]);
 
   const clearTimer = useCallback(() => {
     if (timerInterval.current) {
@@ -163,23 +203,40 @@ const App = () => {
     watchId.current = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude, longitude, speed, accuracy: acc } = pos.coords;
+        const now = Date.now();
+        const timeSinceLastUpdate = (now - lastUpdateRef.current) / 1000;
+        
         setCurrentPos({ latitude, longitude });
         setAccuracy(acc);
+        
         if (statusRef.current === RunStatus.RUNNING) {
+          // Purgue logic: If we just recovered from a gap (> 10s) and accuracy is low, skip point
+          if (timeSinceLastUpdate > 10 && acc > 30) {
+            console.log("Skipping inaccurate point after background recovery");
+            return;
+          }
+          
           if (acc > 50) return;
+          
           setPath(prev => {
             const last = prev[prev.length - 1];
             if (last) {
               const d = calculateDistance(last.latitude, last.longitude, latitude, longitude);
+              // Ignore micro-movements or GPS noise while static
               if (d > 0.003) setDistance(dist => dist + d);
             }
             return [...prev, { latitude, longitude, timestamp: pos.timestamp }];
           });
           setCurrentSpeed(speed ? speed * 3.6 : 0);
         }
+        lastUpdateRef.current = now;
       },
-      null,
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+      (err) => console.warn("GPS Error", err),
+      { 
+        enableHighAccuracy: true, 
+        maximumAge: 0, 
+        timeout: 5000 // Force frequent polling
+      }
     );
     return () => { if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current); };
   }, []);
@@ -228,7 +285,7 @@ const App = () => {
 
   const handleStop = () => {
     clearTimer();
-    const finalElapsed = status === RunStatus.RUNNING 
+    const finalElapsed = statusRef.current === RunStatus.RUNNING 
       ? accumulatedTimeRef.current + (Date.now() - startTimeRef.current)
       : accumulatedTimeRef.current;
     
@@ -277,16 +334,6 @@ const App = () => {
   };
 
   useEffect(() => {
-    const requestWakeLock = async () => {
-      if ('wakeLock' in navigator && status === RunStatus.RUNNING) {
-        try { wakeLockRef.current = await navigator.wakeLock.request('screen'); } catch (err) {}
-      }
-    };
-    if (status === RunStatus.RUNNING) requestWakeLock();
-    else if (wakeLockRef.current) { wakeLockRef.current.release(); wakeLockRef.current = null; }
-  }, [status]);
-
-  useEffect(() => {
     const saved = localStorage.getItem('corricion_history');
     if (saved) try { setHistory(JSON.parse(saved)); } catch (e) {}
     const loader = document.getElementById('loading-screen');
@@ -322,7 +369,7 @@ const App = () => {
     h('main', { className: "flex-1 overflow-y-auto p-4 space-y-6 pb-40" },
       (status === RunStatus.RUNNING || status === RunStatus.PAUSED || status === RunStatus.COMPLETED) ? h('div', { className: "space-y-6" },
         h(MapView, { path, currentPos, isActive: status === RunStatus.RUNNING }),
-        h(RunDashboard, { elapsedTime, distance, currentSpeed, currentPace })
+        h(RunDashboard, { elapsedTime, distance, currentSpeed, currentPace, wakeLockSupported })
       ) : h('div', { className: "space-y-8" },
         h(MapView, { path: [], currentPos, isActive: false }),
         h('div', { className: "text-center py-4" },
